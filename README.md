@@ -54,7 +54,7 @@ Peak memory measured on an M4 Pro:
 | Gemma + Kyutai TTS q8 | ~10.0 GB |
 | Gemma + Kyutai STT q8 + Kyutai TTS q8 | ~11.2 GB |
 
-For a 10 GB budget, do not combine Kyutai STT with Kyutai TTS.
+For a 10 GB budget, do not combine Kyutai STT with Kyutai TTS. The desktop app checks this against the GPU memory macOS recommends for your Mac.
 
 Timings measured on an M4 Pro with Kokoro (expect about half the token speed on a base M4). "Turn end" is the time from the end of your speech until the turn closes. In push-to-talk, that is when you press Enter.
 
@@ -205,7 +205,7 @@ Keep the default `--kyutai-bits 8`. In bf16 (`--kyutai-bits 0`), Kyutai is ~3× 
 
 ## Desktop app (`app/`)
 
-A native macOS app (Tauri v2 + Svelte 5) wraps the same engine. It has two panes: an audio orb with push-to-talk on the left, and the live transcript with corrections on the right. See [VOICE_APP_SPEC.md](VOICE_APP_SPEC.md) for the design.
+A native macOS app (Tauri v2 + Svelte 5) wraps the same engine. It has a native title bar (traffic lights, **Conversation** / **Prompts** pills, settings gear) over two panes: a spherical audio-wave visualizer with push-to-talk on the left, and the live transcript with corrections on the right. See [VOICE_APP_SPEC.md](VOICE_APP_SPEC.md) for the design.
 
 The app runs `serve.py`, a sidecar that speaks JSON lines on stdin/stdout (the protocol is in its docstring). The Rust shell starts the sidecar, sends it commands, and kills its process group on `Cmd + Q`, so all model memory goes back to macOS at once.
 
@@ -219,7 +219,7 @@ pnpm tauri dev       # development: uses the repo .venv and prompts/
 pnpm tauri build     # release: src-tauri/target/release/bundle/{macos,dmg}/
 ```
 
-In development, the app uses the repo `.venv` and `prompts/`. A release build bundles `serve.py`, `tutor.py`, `requirements.txt` and the prompts. On first launch, it creates its own venv in `~/Library/Application Support/fr.bavard.tutor/venv` (this needs Python 3.12+ on the Mac). It also copies the prompts there so you can edit them (Settings, then **Open prompts**). Models are downloaded to the Hugging Face cache, with a progress bar. The sidecar log is in `~/Library/Logs/fr.bavard.tutor/engine.log`.
+In development, the app uses the repo `.venv` and `prompts/`. A release build bundles `serve.py`, `tutor.py`, `requirements.txt` and the prompts. On first launch, it creates its own venv in `~/Library/Application Support/fr.bavard.tutor/venv` (this needs Python 3.12+ on the Mac). It also copies the prompts there. Models are downloaded to the Hugging Face cache, with a progress bar. The sidecar log is in `~/Library/Logs/fr.bavard.tutor/engine.log`.
 
 `pnpm dev` alone opens the UI in a browser with a scripted mock engine. Use it to work on the UI without loading the models.
 
@@ -232,13 +232,19 @@ In development, the app uses the repo `.venv` and `prompts/`. A release build bu
 | Hold `Shift` | Show the English translation |
 | `r` / `Alt + r` | Replay the last reply / replay it at 0.8x |
 | `+` / `-` | Speed ±0.05x (the slider goes from 0.75x to 1.25x) |
+| `Cmd + 1` / `Cmd + 2` | Conversation / Prompts |
 | `Cmd + ,` | Settings: turn mode, hearing, voice, interface language |
-| `Esc` | Hide the window (hands-free modes also close the mic) |
+| `Cmd + S` | In Prompts: save and apply |
+| `Esc` | Back to Conversation, or hide the window (hands-free modes also close the mic) |
 | `Cmd + Q` | Quit and free the memory |
 
 Click the speaker icon on a tutor line to replay it (`Alt`-click: 0.8x). Green underlines mark useful A2/B1 expressions; hover one to see its dictionary form and translation. Translations and vocabulary come from separate Gemma calls that do not use the tutor's prefix cache, so they never slow down the next turn. They run in the background after the tutor stops speaking.
 
-Turn mode and speed change at once. A new hearing method or voice restarts the sidecar (~10 s). The app does not offer Kyutai STT together with Kyutai TTS (~11 GB).
+Turn mode and speed change at once. A new hearing method or voice restarts the sidecar (~10 s). The red traffic light hides the window; `Cmd + Q` quits.
+
+**Memory.** The app does not use a fixed limit. The sidecar reads the GPU memory that macOS recommends for this Mac (Metal's `recommendedMaxWorkingSetSize`, from `mx.device_info()`). Settings shows the estimated peak of the chosen setup (the table in [Memory and speed](#memory-and-speed)) against that budget, and disables options that would go past it. The sidecar also warns at startup if the setup does not fit.
+
+**Prompts.** The **Prompts** view edits `tutor.txt` and `hear.txt` in the app. It checks the required markers as you type. **Save and apply** writes the file and reloads it in the running engine: the conversation is kept, and the prefix cache is rebuilt in about 1 s. **Default** restores the prompt shipped with the app.
 
 To check the sidecar without the app:
 
