@@ -50,7 +50,7 @@
   }
 </script>
 
-<div bind:this={scroller} class="flex-1 overflow-y-auto px-6 py-5 [scrollbar-width:thin]">
+<div bind:this={scroller} class="flex-1 overflow-y-auto px-6 pt-10 pb-5 [scrollbar-width:thin]">
   <div class="mx-auto flex max-w-xl flex-col gap-5">
     {#each session.turns as turn (turn.id)}
       {#if turn.transcript}

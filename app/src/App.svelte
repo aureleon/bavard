@@ -119,11 +119,6 @@
     </nav>
 
     <div data-tauri-drag-region class="flex items-center justify-end gap-2">
-      {#if session.view === "chat"}
-        <span data-tauri-drag-region class="hidden text-[11px] text-white/35 md:inline">
-          {session.translating ? "EN" : t.shiftHint}
-        </span>
-      {/if}
       <button
         class="rounded-md p-1.5 transition {session.view === 'settings'
           ? 'bg-white/[0.16] text-white'
@@ -157,6 +152,13 @@
           <p class="mx-6 mt-3 rounded-md bg-amber-400/10 px-3 py-1.5 text-[11px] text-amber-200">{t.settings.headphones}</p>
         {/if}
         <Transcript />
+        <span
+          class="pointer-events-none absolute top-3 right-4 rounded-full px-2.5 py-0.5 text-[11px] transition {session.translating
+            ? 'bg-sky-300/15 text-sky-200'
+            : 'bg-white/[0.06] text-white/40'}"
+        >
+          {session.translating ? "EN" : t.shiftHint}
+        </span>
       {:else if session.view === "prompts"}
         <PromptsView />
       {:else if session.settings}

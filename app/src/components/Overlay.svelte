@@ -8,7 +8,7 @@
 </script>
 
 {#if session.phase !== "ready"}
-  <div class="absolute inset-0 z-20 grid place-items-center bg-black/35 backdrop-blur-sm">
+  <div class="absolute inset-x-0 top-12 bottom-0 z-20 grid place-items-center bg-black/35 backdrop-blur-sm">
     <div class="w-[min(520px,85%)] rounded-2xl bg-neutral-900/80 p-6 text-white/85 shadow-2xl ring-1 ring-white/10">
       {#if session.phase === "crashed"}
         <h2 class="mb-2 text-base font-semibold text-rose-300">
