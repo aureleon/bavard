@@ -1,0 +1,7 @@
+mlx
+mlx-lm
+mlx-whisper
+sounddevice
+numpy
+kokoro
+soundfile

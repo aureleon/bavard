@@ -6,9 +6,15 @@ cd "$DIR"
 
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
-    python3 -m venv .venv
+    python3 -m venv .venv --prompt bavard
     ./.venv/bin/pip install --upgrade pip
-    ./.venv/bin/pip install mlx mlx-lm mlx-whisper sounddevice numpy kokoro soundfile
+fi
+
+# (Re)install when requirements.txt changes
+if [ ! -f ".venv/.installed" ] || [ requirements.txt -nt .venv/.installed ]; then
+    echo "Installing dependencies..."
+    ./.venv/bin/pip install -r requirements.txt
+    touch .venv/.installed
 fi
 
 ./.venv/bin/python tutor.py "$@"
