@@ -628,6 +628,7 @@ class PcmPlayer:
         self.flushed = False  # True when no more audio is coming for now
         self.on_first_sound = None
         self.on_level = None  # on_level(pcm): every output block, on the audio thread
+        self.paused = False  # hold playback (silence) without dropping audio
         self.stream = sd.OutputStream(samplerate=sample_rate, channels=1, dtype="float32",
                                       blocksize=480, callback=self._callback)
         self.stream.start()
@@ -650,6 +651,7 @@ class PcmPlayer:
 
     def clear(self):
         """Drop everything not played yet (used to stop the tutor mid-sentence)."""
+        self.paused = False
         with self.lock:
             self.pieces = []
             self.buffered = 0
@@ -659,6 +661,10 @@ class PcmPlayer:
     def _callback(self, outdata, frames, time_info, status):
         out = outdata[:, 0]
         out[:] = 0
+        if self.paused:
+            if self.on_level is not None:
+                self.on_level(out)
+            return
         with self.lock:
             if not self.playing:
                 if self.buffered == 0 or (self.buffered < self.prebuffer and not self.flushed):

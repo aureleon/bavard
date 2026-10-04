@@ -10,6 +10,7 @@ protocol.
 Commands
   ptt_start / ptt_stop           push-to-talk (ptt_stop is automatic at 30 s)
   stop                           stop the tutor's voice now
+  voice_pause {paused?}          hold / resume the tutor's voice (toggles)
   set_speed {speed}              0.5 - 1.6 (UI uses 0.75 - 1.25)
   set_turn_mode {mode}           ptt | vad | semantic (semantic loads Kyutai STT)
   pause / resume                 hands-free modes: close / reopen the mic
@@ -30,7 +31,7 @@ Events
   partial {text}, notice {key}, user_turn {id, transcript, pronunciation},
   reply_delta {id, correction, reponse}, reply_done {id, correction, reponse},
   turn_stats {id, ...}, translation {id, ...}, vocab {id, items}, stats {...},
-  speed {speed}, mode {mode}, prompts_reloaded {seconds},
+  speed {speed}, mode {mode}, voice {paused}, prompts_reloaded {seconds},
   prompt_translation {name, req, text, done, missing?}, tuning {...},
   error {message}, fatal {message}, bye
 
@@ -557,6 +558,8 @@ class Engine:
             self.ptt_stop()
         elif cmd == "stop":
             self.stop_speaking()
+        elif cmd == "voice_pause":
+            self.voice_pause(msg.get("paused"))
         elif cmd == "set_speed":
             self.speech.speaker.set_speed(float(msg["speed"]))
             emit("speed", speed=self.speech.speaker.speed)
@@ -613,10 +616,22 @@ class Engine:
         self.set_state("hearing")
         self.submit(PRIO_TURN, self.run_turn, audio, t_end)
 
+    def voice_pause(self, paused=None):
+        """Hold or resume the tutor's voice. Audio keeps its place; synthesis
+        goes on in the background. paused=None toggles."""
+        player = self.speech.player
+        if paused is None:
+            paused = not player.paused
+        if paused and self.state not in ("thinking", "speaking"):
+            paused = False  # nothing to pause
+        player.paused = bool(paused)
+        emit("voice", paused=player.paused)
+
     def stop_speaking(self):
         if self.state in ("thinking", "speaking"):
             self.interrupted = True
         self.speech.cancel()
+        emit("voice", paused=False)
 
     # -- hands-free capture (own thread) ----------------------------------
     def _hands_free_loop(self):
@@ -718,6 +733,9 @@ class Engine:
         # ---- tutor + streaming speech ----------------------------------
         self.set_state("thinking")
         self.interrupted = False
+        if self.speech.player.paused:
+            self.speech.player.paused = False
+            emit("voice", paused=False)
         speech = self.speech
         speech.begin_turn(t_end)
         mark = speech.player.on_first_sound
@@ -828,6 +846,7 @@ class Engine:
         if speed:
             speaker.set_speed(float(speed))
         self.interrupted = False
+        self.speech.player.paused = False
         self.set_state("speaking", id=tid, replay=True)
         try:
             self.speech.begin_turn(None)
