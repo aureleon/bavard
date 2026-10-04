@@ -81,8 +81,10 @@ const fr = {
     ttsKokoro: "Kokoro",
     ttsKyutai: "Kyutai 1.6B",
     kyutaiNote: "Les options Kyutai demandent moshi_mlx (installation manuelle, voir README).",
-    kyutaiBoth: "Kyutai STT + Kyutai TTS dépasse ~11 Go : désactivé.",
+    overBudget: (need: number, budget: number) =>
+      `Désactivé : ~${need} Go, au-delà des ${budget} Go que macOS recommande pour le GPU de ce Mac.`,
     memory: "Mémoire estimée",
+    memoryOf: (budget: number) => `sur ${budget} Go recommandés par macOS`,
     lang: "Langue de l'interface",
     prefetch: "Préparer traductions et vocabulaire après chaque tour",
     greet: "Dire bonjour au démarrage",
@@ -178,8 +180,10 @@ const en: Strings = {
     ttsKokoro: "Kokoro",
     ttsKyutai: "Kyutai 1.6B",
     kyutaiNote: "Kyutai options need moshi_mlx (manual install, see README).",
-    kyutaiBoth: "Kyutai STT + Kyutai TTS needs ~11 GB: disabled.",
+    overBudget: (need: number, budget: number) =>
+      `Disabled: ~${need} GB, more than the ${budget} GB macOS recommends for the GPU on this Mac.`,
     memory: "Estimated memory",
+    memoryOf: (budget: number) => `of ${budget} GB recommended by macOS`,
     lang: "Interface language",
     prefetch: "Prepare translations and vocabulary after each turn",
     greet: "Say hello at startup",

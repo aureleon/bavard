@@ -79,6 +79,8 @@ export function mockBridge(): Bridge {
     emit({
       event: "ready",
       config: {
+        // A 16 GB Mac: Metal recommends ~11.5 GB for the GPU.
+        memory: { device: "Apple M4", total_gb: 17.2, recommended_gb: 11.5, estimate_gb: 5.9 },
         model: "mlx-community/gemma-4-e4b-it-4bit",
         stt: settings.stt,
         turn: settings.turn,

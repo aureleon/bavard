@@ -22,7 +22,8 @@ export const levels = {
   out: { rms: 0, bands: new Array(8).fill(0) as number[], at: 0 },
 };
 
-/** Peak memory measured on main (M4 Pro), see VOICE_APP_SPEC.md §4.7. */
+/** Peak memory measured on an M4 Pro (VOICE_APP_SPEC.md §4.7). Same table as
+ * memory_estimate_gb() in serve.py. */
 export function memoryEstimate(s: Pick<Settings, "stt" | "turn" | "tts">): number {
   const kyutaiStt = s.stt === "kyutai" || s.turn === "semantic";
   if (s.tts === "kyutai") return kyutaiStt ? 11.2 : 10.0;
@@ -32,6 +33,16 @@ export function memoryEstimate(s: Pick<Settings, "stt" | "turn" | "tts">): numbe
 }
 
 export class Session {
+  /** GPU memory macOS recommends on this Mac (from the engine), or null. */
+  get budgetGb(): number | null {
+    return this.config?.memory?.recommended_gb ?? null;
+  }
+
+  fits(s: Pick<Settings, "stt" | "turn" | "tts">): boolean {
+    const b = this.budgetGb;
+    return b === null || memoryEstimate(s) <= b;
+  }
+
   phase = $state<Phase>("boot");
   state = $state<EngineState>("loading");
   mic = $state(false);

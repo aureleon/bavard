@@ -132,6 +132,47 @@ class LevelMeter:
         emit("level", src=self.src, rms=round(level, 3), bands=bands)
 
 
+def memory_estimate_gb(stt, turn, tts):
+    """Peak memory measured on an M4 Pro (README, "Memory and speed")."""
+    kyutai_stt = stt == "kyutai" or turn == "semantic"
+    if tts == "kyutai":
+        return 11.2 if kyutai_stt else 10.0
+    if kyutai_stt:
+        return 7.2
+    return 6.1 if stt == "whisper" else 5.9
+
+
+def memory_budget():
+    """What macOS says the GPU may use: Metal's recommendedMaxWorkingSetSize
+    (about 2/3 to 3/4 of unified memory, depending on the Mac)."""
+    import mlx.core as mx
+
+    info_fn = getattr(mx, "device_info", None) or mx.metal.device_info
+    try:
+        info = info_fn()
+    except Exception:
+        return {"device": None, "total_gb": None, "recommended_gb": None}
+    gb = lambda n: round(n / 1e9, 1) if n else None
+    return {
+        "device": info.get("device_name"),
+        "total_gb": gb(info.get("memory_size")),
+        "recommended_gb": gb(info.get("max_recommended_working_set_size")),
+    }
+
+
+def check_budget(stt, turn, tts):
+    """Warn when a setup is expected to go past the recommended working set."""
+    budget = memory_budget()
+    need = memory_estimate_gb(stt, turn, tts)
+    limit = budget["recommended_gb"]
+    if limit and need > limit:
+        emit("warning", key="memory", need_gb=need, budget_gb=limit,
+             message=f"This setup needs ~{need} GB, more than the {limit} GB that macOS "
+                     f"recommends for the GPU on this Mac ({budget['total_gb']} GB). "
+                     "Expect swapping and slow replies.")
+    return budget, need
+
+
 def is_ras(text):
     return not text or text.strip().upper().rstrip(".!") in ("RAS", "AUCUN", "AUCUNE", "NONE", "")
 
@@ -350,6 +391,7 @@ class Engine:
         voice_default = "ff_siwis" if a.tts == "kokoro" else "cml-tts/fr/10087_11650_000028-0002.wav"
         self.voice = voice_default if a.voice == "default" else a.voice
 
+        check_budget(a.stt, a.turn, a.tts)
         emit("loading", stage="download")
         ensure_downloaded(model_repo)
         if a.tts == "kokoro":
@@ -423,7 +465,9 @@ class Engine:
         except Exception:
             out_name = ""
         a = self.args
+        budget = memory_budget()
         return {
+            "memory": {**budget, "estimate_gb": memory_estimate_gb(a.stt, self.mode, a.tts)},
             "model": self.model_repo, "stt": a.stt, "turn": self.mode, "tts": a.tts,
             "voice": self.voice, "speed": self.speech.speaker.speed,
             "max_context": a.max_context, "max_audio_s": T.MAX_AUDIO_SECONDS,
@@ -580,7 +624,8 @@ class Engine:
             raise ValueError(f"unknown turn mode {mode}")
         if self.ptt is not None and self.ptt.active:
             self.ptt.stop()
-        if mode == "semantic":
+        if mode == "semantic" and self.listener is None:
+            check_budget(self.args.stt, mode, self.args.tts)
             self._load_listener()
         self.hf_cancel.set()
         self.mode = mode
@@ -794,9 +839,6 @@ def main():
     p.add_argument("--mute", action="store_true", help="tests: play silence instead of the voice")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
-    if args.stt == "kyutai" and args.tts == "kyutai" or args.turn == "semantic" and args.tts == "kyutai":
-        emit("warning", key="memory",
-             message="Kyutai STT + Kyutai TTS needs ~11 GB; not recommended on a 16 GB Mac.")
     T.VERBOSE = args.verbose
     Engine(args).run()
 

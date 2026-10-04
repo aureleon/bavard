@@ -56,7 +56,8 @@ impl Settings {
         std::fs::write(path, json).map_err(|e| e.to_string())
     }
 
-    /// Clamp values and refuse combinations that do not fit in 16 GB.
+    /// Clamp values. Memory limits come from the engine (Metal's recommended
+    /// working set), so they are enforced in the UI, not here.
     pub fn sanitized(mut self) -> Self {
         let d = Settings::default();
         if !["audio", "whisper", "kyutai"].contains(&self.stt.as_str()) {
@@ -71,17 +72,9 @@ impl Settings {
         if !["fr", "en"].contains(&self.ui_lang.as_str()) {
             self.ui_lang = d.ui_lang.clone();
         }
-        // Kyutai STT + Kyutai TTS peaks at ~11.2 GB: not offered.
-        if self.tts == "kyutai" && self.uses_kyutai_stt() {
-            self.tts = "kokoro".into();
-        }
         self.speed = self.speed.clamp(0.75, 1.25);
         self.silence = self.silence.clamp(0.6, 3.0);
         self
-    }
-
-    pub fn uses_kyutai_stt(&self) -> bool {
-        self.stt == "kyutai" || self.turn == "semantic"
     }
 
     /// True if going from `self` to `other` needs a sidecar restart (models
@@ -121,13 +114,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn refuses_kyutai_stt_with_kyutai_tts() {
+    fn keeps_any_model_combination() {
         let s = Settings { turn: "semantic".into(), tts: "kyutai".into(), ..Default::default() }.sanitized();
-        assert_eq!(s.tts, "kokoro");
-        let s = Settings { stt: "kyutai".into(), tts: "kyutai".into(), ..Default::default() }.sanitized();
-        assert_eq!(s.tts, "kokoro");
-        let s = Settings { tts: "kyutai".into(), ..Default::default() }.sanitized();
         assert_eq!(s.tts, "kyutai");
+        let s = Settings { stt: "bogus".into(), ..Default::default() }.sanitized();
+        assert_eq!(s.stt, "audio");
     }
 
     #[test]

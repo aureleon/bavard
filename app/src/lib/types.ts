@@ -5,7 +5,16 @@ export type TurnMode = "ptt" | "vad" | "semantic";
 export type Stt = "audio" | "whisper" | "kyutai";
 export type Tts = "kokoro" | "kyutai";
 
+export interface MemoryInfo {
+  device: string | null;
+  total_gb: number | null;
+  /** Metal's recommendedMaxWorkingSetSize: the system's guidance for GPU memory. */
+  recommended_gb: number | null;
+  estimate_gb: number;
+}
+
 export interface EngineConfig {
+  memory: MemoryInfo;
   model: string;
   stt: Stt;
   turn: TurnMode;
@@ -70,7 +79,7 @@ export type EngineEvent =
   | { event: "hello"; pid: number }
   | { event: "loading"; stage: string }
   | { event: "download"; repo: string; done: number; total: number | null; finished?: boolean }
-  | { event: "warning"; key?: string; message: string }
+  | { event: "warning"; key?: string; message: string; need_gb?: number; budget_gb?: number }
   | { event: "ready"; config: EngineConfig }
   | { event: "state"; state: EngineState; mic: boolean; max_s?: number; id?: number; replay?: boolean }
   | { event: "level"; src: "mic" | "out"; rms: number; bands: number[] }

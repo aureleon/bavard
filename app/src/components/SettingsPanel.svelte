@@ -18,11 +18,15 @@
     a.stt !== b.stt || a.tts !== b.tts || a.silence !== b.silence || a.prefetch !== b.prefetch;
   const pending = $derived(session.settings ? needsRestart(session.settings, draft) : false);
   const kyutaiStt = $derived(draft.stt === "kyutai" || draft.turn === "semantic");
+  // An option is disabled when picking it would go past the GPU memory that
+  // macOS recommends on this Mac (Metal recommendedMaxWorkingSetSize).
+  const over = (patch: Partial<Settings>) => !session.fits({ ...draft, ...patch });
+  const budget = $derived(session.budgetGb);
   const headphonesWarn = $derived(draft.turn !== "ptt" && !session.config?.headphones_likely);
 
   function change(patch: Partial<Settings>) {
     draft = { ...draft, ...patch };
-    if (draft.tts === "kyutai" && (draft.stt === "kyutai" || draft.turn === "semantic")) draft.tts = "kokoro";
+    if (!session.fits(draft)) draft.tts = "kokoro";
     if (!needsRestart(session.settings!, draft)) void session.applySettings(draft);
   }
 
@@ -61,8 +65,8 @@
           draft.turn,
           [
             ["ptt", s.turnPtt],
-            ["vad", s.turnVad],
-            ["semantic", s.turnSemantic, draft.tts === "kyutai"],
+            ["vad", s.turnVad, over({ turn: "vad" })],
+            ["semantic", s.turnSemantic, over({ turn: "semantic" })],
           ],
           (v) => change({ turn: v }),
         )}
@@ -92,8 +96,8 @@
           draft.stt,
           [
             ["audio", s.sttAudio],
-            ["whisper", s.sttWhisper],
-            ["kyutai", s.sttKyutai, draft.tts === "kyutai"],
+            ["whisper", s.sttWhisper, over({ stt: "whisper" })],
+            ["kyutai", s.sttKyutai, over({ stt: "kyutai" })],
           ],
           (v) => change({ stt: v }),
         )}
@@ -106,22 +110,32 @@
           draft.tts,
           [
             ["kokoro", s.ttsKokoro],
-            ["kyutai", s.ttsKyutai, kyutaiStt],
+            ["kyutai", s.ttsKyutai, over({ tts: "kyutai" })],
           ],
           (v) => change({ tts: v }),
         )}
-        {#if kyutaiStt}
-          <p class="mt-1.5 text-[11px] text-white/45">{s.kyutaiBoth}</p>
+        {#if over({ tts: "kyutai" }) && budget}
+          <p class="mt-1.5 text-[11px] text-white/45">
+            {s.overBudget(memoryEstimate({ ...draft, tts: "kyutai" }), budget)}
+          </p>
         {/if}
         {#if kyutaiStt || draft.tts === "kyutai"}
           <p class="mt-1.5 text-[11px] text-white/45">{s.kyutaiNote}</p>
         {/if}
       </section>
 
-      <p class="flex justify-between text-[12px] text-white/60">
-        <span>{s.memory}</span>
-        <span class="tabular-nums">~{memoryEstimate(draft).toFixed(1)} GB</span>
-      </p>
+      <div class="text-[12px] text-white/60">
+        <p class="flex justify-between">
+          <span>{s.memory}</span>
+          <span class="tabular-nums">~{memoryEstimate(draft).toFixed(1)} GB</span>
+        </p>
+        {#if budget}
+          <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+            <div class="h-full rounded-full bg-sky-300/70" style:width="{Math.min(100, (100 * memoryEstimate(draft)) / budget)}%"></div>
+          </div>
+          <p class="mt-1 text-right text-[10px] text-white/40">{s.memoryOf(budget)}</p>
+        {/if}
+      </div>
 
       <section>
         <h3 class="mb-1.5 text-[11px] font-semibold tracking-wider text-white/45 uppercase">{s.lang}</h3>
