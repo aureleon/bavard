@@ -830,6 +830,7 @@ class Tutor:
         self.history = []  # text-only chat history (no system message)
         self.merge_system = False
         self.last_stats = None
+        self.max_tokens = 220  # reply length cap; the app can tune it
         log(ui("Modèle LLM prêt !\n", "LLM ready.\n"))
 
     # -- prompt building ---------------------------------------------------
@@ -895,7 +896,7 @@ class Tutor:
         prompt = self._template(self._tutor_messages())
 
         out, last, t0, ttft = "", None, time.time(), None
-        for r in stream_generate(self.model, self.processor, prompt, max_tokens=220,
+        for r in stream_generate(self.model, self.processor, prompt, max_tokens=self.max_tokens,
                                  temperature=self.temperature, prompt_cache_state=self.cache,
                                  **self.sampling):
             if ttft is None:

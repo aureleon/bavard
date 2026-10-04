@@ -18,6 +18,8 @@ Commands
   vocab {id}                     A2/B1 expressions in a tutor reply (cache-less)
   stats                          context, cache and memory
   reload_prompts                 re-read the prompt files (keeps the conversation)
+  set_tuning {temperature?, top_p?, top_k?, max_tokens?, max_context?, eot_threshold?}
+                                 live model tuning (null = model default)
   translate_prompt {name, text, req?}   English prompt -> French (streamed)
   shutdown                       exit now
   Debug: text_turn {text}, file_turn {path}
@@ -29,7 +31,7 @@ Events
   reply_delta {id, correction, reponse}, reply_done {id, correction, reponse},
   turn_stats {id, ...}, translation {id, ...}, vocab {id, items}, stats {...},
   speed {speed}, mode {mode}, prompts_reloaded {seconds},
-  prompt_translation {name, req, text, done, missing?},
+  prompt_translation {name, req, text, done, missing?}, tuning {...},
   error {message}, fatal {message}, bye
 
 All MLX work (Gemma, Whisper) runs on the main thread, because MLX binds
@@ -427,6 +429,8 @@ class Engine:
 
         emit("loading", stage="llm")
         self.tutor = T.Tutor(model_repo, a.max_context, a.temperature, tutor_prompt, hear_prompt)
+        self.apply_tuning({"temperature": a.temperature, "top_p": a.top_p, "top_k": a.top_k,
+                           "max_tokens": a.max_tokens, "max_context": a.max_context}, quiet=True)
         if a.stt == "audio" and not self.tutor.supports_audio:
             raise RuntimeError(f"{model_repo} does not accept audio. Use stt=whisper or stt=kyutai.")
 
@@ -487,7 +491,9 @@ class Engine:
             "memory": {**budget, "estimate_gb": memory_estimate_gb(a.stt, self.mode, a.tts)},
             "model": self.model_repo, "stt": a.stt, "turn": self.mode, "tts": a.tts,
             "voice": self.voice, "speed": self.speech.speaker.speed,
-            "max_context": a.max_context, "max_audio_s": T.MAX_AUDIO_SECONDS,
+            "max_context": self.tutor.max_context, "max_audio_s": T.MAX_AUDIO_SECONDS,
+            "tuning": self.tuning(),
+            "supports_audio": self.tutor.supports_audio,
             "output_device": out_name,
             "headphones_likely": bool(out_name) and not SPEAKER_NAMES.search(out_name),
             "prompts": {"tutor": a.tutor_prompt, "hear": a.hear_prompt},
@@ -572,6 +578,8 @@ class Engine:
             self.submit(PRIO_USER, self.stats)
         elif cmd == "translate_prompt":
             self.submit(PRIO_USER, self.translate_prompt, msg["name"], msg["text"], msg.get("req"))
+        elif cmd == "set_tuning":
+            self.submit(PRIO_USER, self.apply_tuning, msg)
         elif cmd == "reload_prompts":
             self.submit(PRIO_USER, self.reload_prompts)
         elif cmd == "text_turn":
@@ -851,6 +859,47 @@ class Engine:
         missing = [m for m in markers if m.lower() not in out.lower()]
         emit("prompt_translation", name=name, req=req, text=out, done=True, missing=missing)
 
+    def tuning(self):
+        tutor = self.tutor
+        return {
+            "temperature": tutor.temperature,
+            "top_p": tutor.sampling.get("top_p"),
+            "top_k": tutor.sampling.get("top_k"),
+            "max_tokens": tutor.max_tokens,
+            "max_context": tutor.max_context,
+            "eot_threshold": self.listener.eot_threshold if self.listener else self.args.eot_threshold,
+        }
+
+    def apply_tuning(self, msg, quiet=False):
+        """Sampling and context settings that apply from the next turn on,
+        without a restart. A key set to None goes back to the model default."""
+        tutor = self.tutor
+        defaults = {"temperature": 1.0, "top_p": 0.95, "top_k": 64} if tutor.is_gemma else \
+            {"temperature": 0.7, "top_p": None, "top_k": None}
+        if "temperature" in msg:
+            t = msg["temperature"]
+            tutor.temperature = defaults["temperature"] if t is None else max(0.0, min(2.0, float(t)))
+        for key, cast, lo, hi in (("top_p", float, 0.05, 1.0), ("top_k", int, 1, 1000)):
+            if key in msg:
+                v = msg[key]
+                v = defaults[key] if v is None else max(lo, min(hi, cast(v)))
+                if v is None:
+                    tutor.sampling.pop(key, None)
+                else:
+                    tutor.sampling[key] = v
+        if msg.get("max_tokens") is not None:
+            tutor.max_tokens = max(40, min(1024, int(msg["max_tokens"])))
+        if msg.get("max_context") is not None:
+            # Takes effect at the next reply (older turns are trimmed if needed).
+            tutor.max_context = max(2048, min(131072, int(msg["max_context"])))
+        if msg.get("eot_threshold") is not None:
+            v = max(0.05, min(0.99, float(msg["eot_threshold"])))
+            self.args.eot_threshold = v
+            if self.listener:
+                self.listener.eot_threshold = v
+        if not quiet:
+            emit("tuning", **self.tuning())
+
     def reload_prompts(self):
         """Re-read the prompt files and re-warm the prefix cache. The chat
         history is kept; only the system prompt changes."""
@@ -885,6 +934,9 @@ def main():
     p.add_argument("--kyutai-bits", type=int, choices=[0, 4, 8], default=8)
     p.add_argument("--max-context", type=int, default=16384)
     p.add_argument("--temperature", type=float, default=None)
+    p.add_argument("--top-p", type=float, default=None, help="default: 0.95 for Gemma, off otherwise")
+    p.add_argument("--top-k", type=int, default=None, help="default: 64 for Gemma, off otherwise")
+    p.add_argument("--max-tokens", type=int, default=220, help="reply length cap")
     p.add_argument("--tutor-prompt", default=os.path.join(T.PROMPTS_DIR, "tutor.txt"))
     p.add_argument("--hear-prompt", default=os.path.join(T.PROMPTS_DIR, "hear.txt"))
     p.add_argument("--whisper-model", default="mlx-community/whisper-base-mlx")
