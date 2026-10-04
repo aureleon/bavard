@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}

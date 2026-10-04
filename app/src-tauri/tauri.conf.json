@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Bavard",
+  "version": "0.1.0",
+  "identifier": "fr.bavard.tutor",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Bavard",
+        "width": 1000,
+        "height": 640,
+        "minWidth": 760,
+        "minHeight": 480,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "resizable": true,
+        "windowEffects": {
+          "effects": ["hudWindow"],
+          "state": "active",
+          "radius": 18
+        }
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../serve.py": "engine/serve.py",
+      "../../tutor.py": "engine/tutor.py",
+      "../../requirements.txt": "engine/requirements.txt",
+      "../../prompts/tutor.txt": "engine/prompts/tutor.txt",
+      "../../prompts/hear.txt": "engine/prompts/hear.txt"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "entitlements": "Entitlements.plist"
+    }
+  }
+}
