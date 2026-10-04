@@ -47,6 +47,19 @@ export function mockBridge(): Bridge {
     ui_lang: "fr",
     prefetch: true,
     greet: true,
+    dev: {
+      model: "gemma-e4b",
+      max_context: 16384,
+      temperature: null,
+      top_p: null,
+      top_k: null,
+      max_tokens: 220,
+      eot_threshold: 0.5,
+      whisper_model: "mlx-community/whisper-base-mlx",
+      kyutai_bits: 8,
+      kyutai_stt_bits: 8,
+      verbose: false,
+    },
   };
   let state = "loading";
   let src: "mic" | "out" | null = null;
@@ -105,6 +118,8 @@ export function mockBridge(): Bridge {
         output_device: "AirPods",
         headphones_likely: true,
         prompts: { tutor: "prompts/tutor.txt", hear: "prompts/hear.txt" },
+        tuning: { temperature: 1, top_p: 0.95, top_k: 64, max_tokens: 220, max_context: 16384, eot_threshold: 0.5 },
+        supports_audio: true,
       },
     });
     emit({ event: "reply_done", id: 0, correction: null, reponse: "Bonjour ! Comment vas-tu aujourd'hui ?", greeting: true });
@@ -207,6 +222,9 @@ export function mockBridge(): Bridge {
           emit({ event: "prompt_translation", name: msg.name as "tutor", req: msg.req as number, text: fr, done: true, missing: [] });
           break;
         }
+        case "stats":
+          emit({ event: "stats", context_tokens: 912 + n * 120, max_context: 16384, turns: n, speed, last: null });
+          break;
         case "stop":
           src = null;
           setState("idle");

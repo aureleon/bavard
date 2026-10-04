@@ -48,6 +48,7 @@ export class Session {
   phase = $state<Phase>("boot");
   view = $state<View>("chat");
   promptsReloadedAt = $state(0);
+  contextTokens = $state<number | null>(null);
   /** English prompt -> French translation in progress or just finished. */
   promptTranslation = $state<{ req: number; name: PromptName; text: string; done: boolean; missing?: string[] } | null>(null);
   #promptReq = 0;
@@ -237,6 +238,16 @@ export class Session {
       case "mode":
         this.mode = e.mode;
         break;
+      case "tuning":
+        if (this.config) {
+          const { event: _, ...tuning } = e;
+          this.config.tuning = tuning;
+          this.config.max_context = tuning.max_context;
+        }
+        break;
+      case "stats":
+        this.contextTokens = e.context_tokens;
+        break;
       case "prompt_translation":
         if (this.promptTranslation && e.req === this.promptTranslation.req) {
           this.promptTranslation = { ...this.promptTranslation, text: e.text, done: e.done, missing: e.missing };
@@ -314,14 +325,19 @@ export class Session {
 
   /** Save settings; apply live what can be applied, restart otherwise. */
   async applySettings(next: Settings): Promise<void> {
-    const prevTurn = this.settings?.turn;
+    const prev = this.settings ? ($state.snapshot(this.settings) as Settings) : null;
     const restart = await this.bridge.saveSettings(next);
     this.settings = await this.bridge.getSettings();
     if (restart) {
       await this.restart();
       return;
     }
-    if (this.settings.turn !== prevTurn) this.send({ cmd: "set_turn_mode", mode: this.settings.turn });
+    if (this.settings.turn !== prev?.turn) this.send({ cmd: "set_turn_mode", mode: this.settings.turn });
+    // Live tuning: only the keys that changed.
+    const live = ["temperature", "top_p", "top_k", "max_tokens", "max_context", "eot_threshold"] as const;
+    const changed: Record<string, unknown> = {};
+    for (const k of live) if (prev && prev.dev[k] !== this.settings.dev[k]) changed[k] = this.settings.dev[k];
+    if (Object.keys(changed).length) this.send({ cmd: "set_tuning", ...changed });
   }
 }
 

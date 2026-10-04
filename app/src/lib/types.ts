@@ -26,6 +26,31 @@ export interface EngineConfig {
   output_device: string;
   headphones_likely: boolean;
   prompts: { tutor: string; hear: string };
+  tuning: Tuning;
+  supports_audio: boolean;
+}
+
+export interface DevSettings {
+  model: string;
+  max_context: number;
+  temperature: number | null;
+  top_p: number | null;
+  top_k: number | null;
+  max_tokens: number;
+  eot_threshold: number;
+  whisper_model: string;
+  kyutai_bits: number;
+  kyutai_stt_bits: number;
+  verbose: boolean;
+}
+
+export interface Tuning {
+  temperature: number;
+  top_p: number | null;
+  top_k: number | null;
+  max_tokens: number;
+  max_context: number;
+  eot_threshold: number;
 }
 
 export interface Settings {
@@ -37,6 +62,7 @@ export interface Settings {
   ui_lang: "fr" | "en";
   prefetch: boolean;
   greet: boolean;
+  dev: DevSettings;
 }
 
 export interface VocabItem {
@@ -91,10 +117,11 @@ export type EngineEvent =
   | ({ event: "turn_stats" } & TurnStats)
   | ({ event: "translation"; id: number } & Translation)
   | { event: "vocab"; id: number; items: VocabItem[] }
-  | { event: "stats"; context_tokens: number; max_context: number; turns: number; speed: number }
+  | { event: "stats"; context_tokens: number; max_context: number; turns: number; speed: number; last: Record<string, number> | null }
   | { event: "speed"; speed: number }
   | { event: "mode"; mode: TurnMode }
   | { event: "prompts_reloaded"; seconds: number }
+  | ({ event: "tuning" } & Tuning)
   | { event: "prompt_translation"; name: PromptName; req: number | null; text: string; done: boolean; missing?: string[] }
   | { event: "error"; message: string }
   | { event: "fatal"; message: string }
@@ -125,3 +152,19 @@ export const PROMPT_MARKERS: Record<PromptName, string[]> = {
   tutor: ["CORRECTION:", "RÉPONSE:"],
   hear: ["TRANSCRIPTION:", "PRONONCIATION:"],
 };
+
+/** Model aliases known to serve.py. Gemma 4 models also hear audio. */
+export const MODELS: { id: string; label: string; audio: boolean }[] = [
+  { id: "gemma-e4b", label: "Gemma 4 E4B", audio: true },
+  { id: "gemma-e2b", label: "Gemma 4 E2B", audio: true },
+  { id: "gemma-12b", label: "Gemma 4 12B", audio: true },
+  { id: "qwen-3b", label: "Qwen 2.5 3B", audio: false },
+  { id: "qwen-7b", label: "Qwen 2.5 7B", audio: false },
+  { id: "mistral", label: "Mistral 7B v0.3", audio: false },
+];
+
+/** Audio input support, guessed from the alias or the repo name. */
+export function modelHearsAudio(model: string): boolean {
+  const known = MODELS.find((m) => m.id === model);
+  return known ? known.audio : /gemma-?4|gemma-3n/i.test(model);
+}

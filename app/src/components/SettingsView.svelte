@@ -1,6 +1,7 @@
 <script lang="ts">
   import { memoryEstimate, session } from "../lib/session.svelte";
-  import type { Settings } from "../lib/types";
+  import { modelHearsAudio, type Settings } from "../lib/types";
+  import DevOptions from "./DevOptions.svelte";
 
   const t = $derived(session.t);
   const s = $derived(t.settings);
@@ -8,8 +9,17 @@
   let draft = $state<Settings>($state.snapshot(session.settings!) as Settings);
 
 
+  // Same rule as Settings::needs_restart in settings.rs.
   const needsRestart = (a: Settings, b: Settings) =>
-    a.stt !== b.stt || a.tts !== b.tts || a.silence !== b.silence || a.prefetch !== b.prefetch;
+    a.stt !== b.stt ||
+    a.tts !== b.tts ||
+    a.silence !== b.silence ||
+    a.prefetch !== b.prefetch ||
+    a.dev.model !== b.dev.model ||
+    a.dev.whisper_model !== b.dev.whisper_model ||
+    a.dev.kyutai_bits !== b.dev.kyutai_bits ||
+    a.dev.kyutai_stt_bits !== b.dev.kyutai_stt_bits ||
+    a.dev.verbose !== b.dev.verbose;
   const pending = $derived(session.settings ? needsRestart(session.settings, draft) : false);
   const kyutaiStt = $derived(draft.stt === "kyutai" || draft.turn === "semantic");
   // An option is disabled when picking it would go past the GPU memory that
@@ -82,7 +92,7 @@
         {@render seg(
           draft.stt,
           [
-            ["audio", s.sttAudio],
+            ["audio", s.sttAudio, !modelHearsAudio(draft.dev.model)],
             ["whisper", s.sttWhisper, over({ stt: "whisper" })],
             ["kyutai", s.sttKyutai, over({ stt: "kyutai" })],
           ],
@@ -156,6 +166,8 @@
           {t.restart}
         </button>
       </section>
+
+      <DevOptions {draft} {change} />
 
       {#if session.warnings.length}
         <section>

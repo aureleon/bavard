@@ -243,6 +243,8 @@ Turn mode and speed change at once. A new hearing method or voice restarts the s
 
 **Memory.** The app does not use a fixed limit. The sidecar reads the GPU memory that macOS recommends for this Mac (Metal's `recommendedMaxWorkingSetSize`, from `mx.device_info()`). Settings shows the estimated peak of the chosen setup (the table in [Memory and speed](#memory-and-speed)) against that budget, and disables options that would go past it. The sidecar also warns at startup if the setup does not fit.
 
+**Developer options.** At the bottom of Settings: the model (any alias from `--model`, or another MLX repo; text-only models switch hearing to Whisper), the context window, temperature / top-p / top-k, the reply length cap, the semantic end-of-turn threshold, the Whisper model, Kyutai quantization, and a verbose log. Sampling, reply length, context and the threshold apply from the next turn without a restart (`set_tuning`); the others restart the engine. A green or amber dot shows which is which.
+
 **Prompts.** The **Prompts** view edits `tutor.txt` and `hear.txt` in the app. It checks the required markers as you type. **Save and apply** writes the file and reloads it in the running engine: the conversation is kept, and the prefix cache is rebuilt in about 1 s. **Default** restores the prompt shipped with the app. To write a prompt in English, switch the editor to **English** and press **Translate to French**: Gemma translates it (about 15 s, streamed into the editor) and keeps the markers and the French example sentences. Review the French text, then save. Your English text is kept for the next edit.
 
 To check the sidecar without the app:
