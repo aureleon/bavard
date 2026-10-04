@@ -106,42 +106,108 @@ fn python_version(python: &Path) -> Option<(u32, u32)> {
     Some((maj.parse().ok()?, min.parse().ok()?))
 }
 
-/// Find a Python 3.12+ interpreter. GUI apps get a minimal PATH, so look in
-/// the usual install locations and ask a login shell as a last resort.
+/// Kokoro (and its misaki / spaCy stack) only supports Python 3.10 - 3.12.
+/// 3.12 is preferred: it is what the engine is tested with.
+const MIN_MINOR: u32 = 10;
+const MAX_MINOR: u32 = 12;
+
+fn supported(v: Option<(u32, u32)>) -> Option<u32> {
+    match v {
+        Some((3, m)) if (MIN_MINOR..=MAX_MINOR).contains(&m) => Some(m),
+        _ => None,
+    }
+}
+
+fn shell_lookup(cmd: &str) -> Vec<PathBuf> {
+    Command::new("/bin/zsh")
+        .args(["-lc", cmd])
+        .stdin(Stdio::null())
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| PathBuf::from(l.trim()))
+                .filter(|p| p.is_absolute())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Find a Python 3.10 - 3.12 interpreter, newest first. GUI apps get a
+/// minimal PATH, so look in the usual install locations and ask a login
+/// shell as well.
 fn find_base_python() -> Option<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut candidates: Vec<PathBuf> = Vec::new();
-    for v in ["3.13", "3.12", "3.14"] {
+    for m in (MIN_MINOR..=MAX_MINOR).rev() {
+        let v = format!("3.{m}");
         candidates.push(format!("/opt/homebrew/bin/python{v}").into());
+        candidates.push(format!("/opt/homebrew/opt/python@{v}/bin/python{v}").into());
         candidates.push(format!("/usr/local/bin/python{v}").into());
         candidates.push(format!("/Library/Frameworks/Python.framework/Versions/{v}/bin/python3").into());
     }
     for root in [
         format!("{home}/.local/share/mise/installs/python"),
         format!("{home}/.pyenv/versions"),
+        format!("{home}/.local/share/uv/python"),
     ] {
         if let Ok(entries) = std::fs::read_dir(&root) {
-            let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-            dirs.sort();
-            dirs.reverse();
-            candidates.extend(dirs.into_iter().map(|d| d.join("bin/python3")));
+            for e in entries.flatten() {
+                candidates.push(e.path().join("bin/python3"));
+            }
         }
     }
+    candidates.extend(shell_lookup("command -v python3.12 python3.11 python3.10 python3"));
     candidates.push("/opt/homebrew/bin/python3".into());
     candidates.push("/usr/local/bin/python3".into());
-    if let Ok(out) = Command::new("/bin/zsh")
-        .args(["-lc", "command -v python3.13 python3.12 python3"])
-        .stdin(Stdio::null())
-        .output()
-    {
-        for line in String::from_utf8_lossy(&out.stdout).lines() {
-            candidates.push(line.trim().into());
+
+    let mut best: Option<(u32, PathBuf)> = None;
+    for p in candidates.into_iter().filter(|p| p.exists()) {
+        if let Some(m) = supported(python_version(&p)) {
+            if best.as_ref().is_none_or(|(bm, _)| m > *bm) {
+                best = Some((m, p));
+            }
         }
     }
-    candidates
-        .into_iter()
-        .filter(|p| p.exists())
-        .find(|p| matches!(python_version(p), Some((3, m)) if m >= 12))
+    best.map(|(_, p)| p)
+}
+
+/// Last resort: let uv download a standalone Python 3.12.
+fn python_from_uv(app: &AppHandle, paths: &Paths) -> Option<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut uvs: Vec<PathBuf> = vec![
+        format!("{home}/.local/bin/uv").into(),
+        format!("{home}/.cargo/bin/uv").into(),
+        "/opt/homebrew/bin/uv".into(),
+        "/usr/local/bin/uv".into(),
+    ];
+    uvs.extend(shell_lookup("command -v uv"));
+    let uv = uvs.into_iter().find(|p| p.exists())?;
+    emit(app, "uv_python", None);
+    log_line(paths, &format!("setup: installing Python 3.12 with {}", uv.display()));
+    let ok = Command::new(&uv)
+        .args(["python", "install", "3.12"])
+        .stdin(Stdio::null())
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !ok {
+        return None;
+    }
+    let out = Command::new(&uv).args(["python", "find", "3.12"]).stdin(Stdio::null()).output().ok()?;
+    let p = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    supported(python_version(&p)).map(|_| p)
+}
+
+/// Setup steps also go to the engine log, so failures can be read later.
+fn log_line(paths: &Paths, line: &str) {
+    use std::io::Write;
+    if let Some(dir) = paths.log_path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&paths.log_path) {
+        let _ = writeln!(f, "{line}");
+    }
 }
 
 fn run_logged(app: &AppHandle, stage: &str, cmd: &mut Command) -> Result<(), String> {
@@ -203,15 +269,37 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
     }
 
     let marker = paths.venv_dir.join(".bavard-requirements");
+    // A venv made with an unsupported Python (e.g. 3.14) can never install
+    // Kokoro: start over.
+    if python.exists() && supported(python_version(&python)).is_none() {
+        log_line(paths, "setup: removing a venv made with an unsupported Python");
+        std::fs::remove_dir_all(&paths.venv_dir).map_err(|e| e.to_string())?;
+    }
     if python.exists() && std::fs::read_to_string(&marker).ok().as_deref() == Some(wanted.as_str()) {
         return Ok(python);
     }
+    let result = install(app, paths, &python, &requirements);
+    match &result {
+        Ok(()) => {
+            std::fs::write(&marker, wanted).map_err(|e| e.to_string())?;
+            log_line(paths, "setup: done");
+            emit(app, "done", None);
+        }
+        Err(e) => log_line(paths, &format!("setup failed: {e}")),
+    }
+    result.map(|_| python)
+}
 
+fn install(app: &AppHandle, paths: &Paths, python: &Path, requirements: &Path) -> Result<(), String> {
+    log_line(paths, &format!("\n=== setup {}", paths.venv_dir.display()));
     if !python.exists() {
         emit(app, "find_python", None);
-        let base = find_base_python().ok_or(
-            "Python 3.12 or newer was not found. Install it (for example `brew install python@3.12`) and restart Bavard.",
+        let base = find_base_python().or_else(|| python_from_uv(app, paths)).ok_or(
+            "Python 3.12 was not found. Bavard needs Python 3.10 - 3.12 (the Kokoro voice does not \
+             support 3.13 or newer). Install it with `brew install python@3.12` (or \
+             `uv python install 3.12`) and restart Bavard.",
         )?;
+        log_line(paths, &format!("setup: base Python {}", base.display()));
         run_logged(
             app,
             "venv",
@@ -220,17 +308,14 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
         run_logged(
             app,
             "pip",
-            Command::new(&python).args(["-m", "pip", "install", "--upgrade", "pip"]),
+            Command::new(python).args(["-m", "pip", "install", "--upgrade", "pip"]),
         )?;
     }
     run_logged(
         app,
         "pip",
-        Command::new(&python)
+        Command::new(python)
             .args(["-m", "pip", "install", "--progress-bar", "off", "-r"])
-            .arg(&requirements),
-    )?;
-    std::fs::write(&marker, wanted).map_err(|e| e.to_string())?;
-    emit(app, "done", None);
-    Ok(python)
+            .arg(requirements),
+    )
 }
