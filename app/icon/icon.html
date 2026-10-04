@@ -16,6 +16,39 @@
       const B = S - 2 * M;
       const RAD = 185;
 
+      // Palettes (pick with ?p=name in the URL). Each: body gradient, glow, ring
+      // stops from the top of the sphere to the bottom, core highlight.
+      const PALETTES = {
+        current: {
+          body: ["#26314f", "#111729", "#1d1840"], shadow: "#0b1020",
+          glow: ["rgba(110,170,255,0.42)", "rgba(140,120,255,0.12)", "rgba(140,120,255,0)"],
+          rings: [[0, [96, 205, 255]], [0.38, [150, 185, 255]], [0.7, [178, 140, 255]], [1, [255, 140, 110]]],
+          core: "200,220,255",
+        },
+        // Ink and paper: near-black blue body, cream rings, one warm red at the bottom.
+        ink: {
+          body: ["#22262e", "#15181e", "#1b1d22"], shadow: "#0c0d10",
+          glow: ["rgba(240,225,200,0.16)", "rgba(240,225,200,0.05)", "rgba(240,225,200,0)"],
+          rings: [[0, [246, 238, 222]], [0.7, [232, 218, 196]], [1, [226, 112, 92]]],
+          core: "255,245,230",
+        },
+        // Bleu de France: one hue, navy body, rings from pale sky to deep blue.
+        bleu: {
+          body: ["#1f2d4a", "#121a2c", "#141d33"], shadow: "#0a0f1a",
+          glow: ["rgba(120,165,230,0.30)", "rgba(120,165,230,0.08)", "rgba(120,165,230,0)"],
+          rings: [[0, [222, 234, 250]], [0.5, [140, 178, 235]], [1, [70, 112, 200]]],
+          core: "220,232,255",
+        },
+        // Slate and brass: green-grey body, warm amber rings.
+        brass: {
+          body: ["#2a302e", "#171b1a", "#1d201e"], shadow: "#0b0d0c",
+          glow: ["rgba(240,190,110,0.22)", "rgba(240,190,110,0.06)", "rgba(240,190,110,0)"],
+          rings: [[0, [250, 222, 170]], [0.55, [232, 180, 105]], [1, [200, 128, 70]]],
+          core: "255,235,200",
+        },
+      };
+      const P = PALETTES[new URLSearchParams(location.search).get("p")] || PALETTES.bleu;
+
       function squircle(x, y, w, h, r) {
         // Rounded rect with slightly "continuous" corners.
         const k = 0.62;
@@ -38,7 +71,7 @@
       ctx.shadowBlur = 40;
       ctx.shadowOffsetY = 14;
       squircle(M, M, B, B, RAD);
-      ctx.fillStyle = "#0b1020";
+      ctx.fillStyle = P.shadow;
       ctx.fill();
       ctx.restore();
 
@@ -47,9 +80,9 @@
       squircle(M, M, B, B, RAD);
       ctx.clip();
       let g = ctx.createLinearGradient(M, M, M + B, M + B);
-      g.addColorStop(0, "#26314f");
-      g.addColorStop(0.55, "#111729");
-      g.addColorStop(1, "#1d1840");
+      g.addColorStop(0, P.body[0]);
+      g.addColorStop(0.55, P.body[1]);
+      g.addColorStop(1, P.body[2]);
       ctx.fillStyle = g;
       ctx.fillRect(M, M, B, B);
       // top sheen
@@ -65,20 +98,13 @@
 
       // Glow behind the sphere
       g = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * 1.55);
-      g.addColorStop(0, "rgba(110,170,255,0.42)");
-      g.addColorStop(0.6, "rgba(140,120,255,0.12)");
-      g.addColorStop(1, "rgba(140,120,255,0)");
+      g.addColorStop(0, P.glow[0]);
+      g.addColorStop(0.6, P.glow[1]);
+      g.addColorStop(1, P.glow[2]);
       ctx.fillStyle = g;
       ctx.fillRect(M, M, B, B);
 
-      // Ring colors: the visualizer's state palette, top to bottom
-      // (speaking cyan -> idle blue -> thinking violet -> listening coral).
-      const stops = [
-        [0.0, [96, 205, 255]],
-        [0.38, [150, 185, 255]],
-        [0.7, [178, 140, 255]],
-        [1.0, [255, 140, 110]],
-      ];
+      const stops = P.rings;
       function mix(u) {
         for (let i = 1; i < stops.length; i++) {
           if (u <= stops[i][0]) {
@@ -139,8 +165,8 @@
 
       // Soft core highlight
       g = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.35, 5, cx, cy, R);
-      g.addColorStop(0, "rgba(200,220,255,0.18)");
-      g.addColorStop(1, "rgba(200,220,255,0)");
+      g.addColorStop(0, `rgba(${P.core},0.18)`);
+      g.addColorStop(1, `rgba(${P.core},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
