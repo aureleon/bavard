@@ -1,7 +1,9 @@
 mlx
-mlx-lm
+mlx-vlm>=0.7.4
 mlx-whisper
 sounddevice
 numpy
-kokoro
 soundfile
+kokoro
+silero-vad
+scipy
