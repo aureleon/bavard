@@ -58,6 +58,12 @@ impl Engine {
         cmd.arg("-u")
             .arg(launch.engine_dir.join("serve.py"))
             .args(&launch.args)
+            // Development / tests only, e.g. BAVARD_ENGINE_EXTRA_ARGS="--mute --verbose".
+            .args(
+                std::env::var("BAVARD_ENGINE_EXTRA_ARGS")
+                    .unwrap_or_default()
+                    .split_whitespace(),
+            )
             .current_dir(&launch.engine_dir)
             .env("PYTHONUNBUFFERED", "1")
             .env("TOKENIZERS_PARALLELISM", "false")
