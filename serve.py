@@ -17,6 +17,7 @@ Commands
   translate {id}                 English for one turn (cache-less, cached per turn)
   vocab {id}                     A2/B1 expressions in a tutor reply (cache-less)
   stats                          context, cache and memory
+  reload_prompts                 re-read the prompt files (keeps the conversation)
   shutdown                       exit now
   Debug: text_turn {text}, file_turn {path}
 
@@ -26,7 +27,8 @@ Events
   partial {text}, notice {key}, user_turn {id, transcript, pronunciation},
   reply_delta {id, correction, reponse}, reply_done {id, correction, reponse},
   turn_stats {id, ...}, translation {id, ...}, vocab {id, items}, stats {...},
-  speed {speed}, mode {mode}, error {message}, fatal {message}, bye
+  speed {speed}, mode {mode}, prompts_reloaded {seconds},
+  error {message}, fatal {message}, bye
 
 All MLX work (Gemma, Whisper) runs on the main thread, because MLX binds
 arrays to per-thread streams. Kyutai models run on their own threads (see
@@ -553,6 +555,8 @@ class Engine:
             self.submit(PRIO_USER, self.vocab, int(msg["id"]))
         elif cmd == "stats":
             self.submit(PRIO_USER, self.stats)
+        elif cmd == "reload_prompts":
+            self.submit(PRIO_USER, self.reload_prompts)
         elif cmd == "text_turn":
             self.submit(PRIO_TURN, self.run_turn, None, time.time(), text=msg["text"])
         elif cmd == "file_turn":
@@ -808,6 +812,19 @@ class Engine:
         finally:
             speaker.set_speed(old)
             self.settle()
+
+    def reload_prompts(self):
+        """Re-read the prompt files and re-warm the prefix cache. The chat
+        history is kept; only the system prompt changes."""
+        a, tutor = self.args, self.tutor
+        tutor_prompt = read_prompt(a.tutor_prompt, "tutor")
+        hear_prompt = read_prompt(a.hear_prompt, "hear") if a.stt == "audio" else tutor.hear_prompt
+        tutor.tutor_prompt, tutor.hear_prompt = tutor_prompt, hear_prompt
+        # The cached tokens start with the old system prompt: start over.
+        tutor.cache = T.PromptCacheState()
+        t0 = time.time()
+        tutor.warm_up(audio=False)
+        emit("prompts_reloaded", seconds=round(time.time() - t0, 2))
 
     def stats(self):
         tutor = self.tutor

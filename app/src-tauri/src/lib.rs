@@ -135,6 +135,48 @@ fn open_prompts(state: State<AppState>) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// The prompts shipped with this build, for "Restore default".
+const DEFAULT_PROMPTS: [(&str, &str); 2] = [
+    ("tutor", include_str!("../../../prompts/tutor.txt")),
+    ("hear", include_str!("../../../prompts/hear.txt")),
+];
+
+fn prompt_path(state: &AppState, name: &str) -> Result<PathBuf, String> {
+    if !DEFAULT_PROMPTS.iter().any(|(n, _)| *n == name) {
+        return Err(format!("unknown prompt {name}"));
+    }
+    Ok(state.paths.prompts_dir.join(format!("{name}.txt")))
+}
+
+/// Current text, default text and file path of each system prompt.
+#[tauri::command]
+fn read_prompts(state: State<AppState>) -> Result<Value, String> {
+    state.paths.ensure_prompts()?;
+    let mut out = serde_json::Map::new();
+    for (name, default) in DEFAULT_PROMPTS {
+        let path = prompt_path(&state, name)?;
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        out.insert(
+            name.into(),
+            json!({ "text": text, "default": default, "path": path.display().to_string() }),
+        );
+    }
+    Ok(Value::Object(out))
+}
+
+/// Save a prompt and tell the engine to reload it (keeps the conversation).
+#[tauri::command]
+fn write_prompt(name: String, text: String, state: State<AppState>) -> Result<(), String> {
+    state.paths.ensure_prompts()?;
+    let path = prompt_path(&state, &name)?;
+    let text = if text.ends_with('\n') { text } else { format!("{text}\n") };
+    std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+    if state.engine.is_running() {
+        state.engine.send(&json!({ "cmd": "reload_prompts" }))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn open_log(state: State<AppState>) -> Result<(), String> {
     std::process::Command::new("open")
@@ -197,6 +239,8 @@ pub fn run() {
             engine_send,
             engine_info,
             open_prompts,
+            read_prompts,
+            write_prompt,
             open_log,
             hide_window
         ])
