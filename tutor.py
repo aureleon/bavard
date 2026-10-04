@@ -82,9 +82,9 @@ MAX_AUDIO_SECONDS = 30  # Gemma 4 audio encoder limit (480,000 samples at 16 kHz
 # Install hint for moshi_mlx; targets whichever interpreter is running this script.
 _PIP = f"{shlex.quote(sys.executable)} -m pip"
 MOSHI_INSTALL_HINT = (
-    "Install it without its pinned dependencies (see README):\n"
-    f"   {_PIP} install --no-deps moshi_mlx rustymimi sphn\n"
-    f"   {_PIP} install aiohttp sentencepiece"
+    "./run.sh installs it automatically. To install it by hand (without its pinned dependencies):\n"
+    f"   {_PIP} install -r requirements.txt\n"
+    f"   {_PIP} install --no-deps -r requirements-kyutai.txt"
 )
 
 MODEL_ALIASES = {

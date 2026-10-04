@@ -1,0 +1,7 @@
+# Kyutai STT / TTS (--stt kyutai, --turn semantic, --tts kyutai).
+# moshi_mlx pins an old MLX that conflicts with Gemma 4 support in mlx-vlm, so
+# run.sh and the app install this file with `pip install --no-deps`. Its real
+# runtime dependencies are in requirements.txt. Versions are the tested ones.
+moshi_mlx==0.3.0
+rustymimi==0.4.1
+sphn==0.2.1

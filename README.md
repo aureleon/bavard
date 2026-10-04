@@ -120,7 +120,7 @@ Hands-free modes (`--turn vad`, `--turn semantic`): just talk. Press **Ctrl+C** 
 ./run.sh --stt whisper
 ./run.sh --stt whisper --whisper-model mlx-community/whisper-large-v3-turbo
 
-# Kyutai STT, streaming (needs the Kyutai setup below; --kyutai-stt-bits 4, 8 or 0 = bf16)
+# Kyutai STT, streaming (--kyutai-stt-bits 4, 8 or 0 = bf16)
 ./run.sh --stt kyutai
 
 # Hands-free, end of turn after a silence (longer pause for slow speakers)
@@ -140,7 +140,6 @@ Hands-free modes (`--turn vad`, `--turn semantic`): just talk. Press **Ctrl+C** 
 ./run.sh --model qwen-3b --stt whisper
 
 # Kyutai TTS 1.6B, 8-bit MLX quantization (default; --kyutai-bits 4 or 0 = bf16)
-# Needs a manual install first, see "Kyutai setup" below
 ./run.sh --tts kyutai
 ./run.sh --tts kyutai --no-frame-streaming   # old behavior: play each chunk when complete
 
@@ -178,11 +177,11 @@ Bavard warns at startup if a marker is missing. To keep several versions, pass a
 
 ### Kyutai setup (TTS and STT)
 
-Kyutai TTS (`--tts kyutai`), Kyutai STT (`--stt kyutai`) and `--turn semantic` all need `moshi_mlx`. It pins an old MLX version that conflicts with Gemma 4 support in `mlx-vlm`. For that reason it is not in `requirements.txt`. Install it without its pinned dependencies:
+Kyutai TTS (`--tts kyutai`), Kyutai STT (`--stt kyutai`) and `--turn semantic` all need `moshi_mlx`. It pins an old MLX version that conflicts with Gemma 4 support in `mlx-vlm`, so it is listed in `requirements-kyutai.txt` and installed with `--no-deps`. Its runtime dependencies are in `requirements.txt`. `run.sh` and the desktop app do this for you. To do it by hand:
 
 ```bash
-./.venv/bin/pip install --no-deps moshi_mlx rustymimi sphn
-./.venv/bin/pip install aiohttp sentencepiece
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/pip install --no-deps -r requirements-kyutai.txt
 ```
 
 Kyutai runs on MLX. MLX ties arrays to per-thread streams, so Bavard builds the Kyutai model on its own synthesis thread. It then synthesizes while Gemma is still generating, sharing the GPU.

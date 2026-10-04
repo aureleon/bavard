@@ -7,3 +7,7 @@ soundfile
 kokoro
 silero-vad
 scipy
+# Runtime dependencies of moshi_mlx (Kyutai), which is installed with --no-deps
+# from requirements-kyutai.txt
+aiohttp
+sentencepiece

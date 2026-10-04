@@ -49,6 +49,7 @@ const fr = {
     uv_python: "Téléchargement de Python 3.12…",
     venv: "Création de l'environnement Python…",
     pip: "Installation des dépendances (quelques minutes)…",
+    kyutai: "Installation de Kyutai (moshi_mlx)…",
     done: "Installation terminée.",
     once: "Quelques minutes, une seule fois. Bavard démarre tout seul ensuite.",
   } as Record<string, string>,
@@ -82,7 +83,7 @@ const fr = {
     tts: "Voix",
     ttsKokoro: "Kokoro",
     ttsKyutai: "Kyutai 1.6B",
-    kyutaiNote: "Les options Kyutai demandent moshi_mlx (installation manuelle, voir README).",
+    kyutaiNote: "Les options Kyutai se chargent au redémarrage du moteur (~1,5 Go de modèles à télécharger la première fois).",
     overBudget: (need: number, budget: number) =>
       `Désactivé : ~${need} Go, au-delà des ${budget} Go que macOS recommande pour le GPU de ce Mac.`,
     memory: "Mémoire estimée",
@@ -176,6 +177,7 @@ const en: Strings = {
     uv_python: "Downloading Python 3.12…",
     venv: "Creating the Python environment…",
     pip: "Installing dependencies (a few minutes)…",
+    kyutai: "Installing Kyutai (moshi_mlx)…",
     done: "Setup complete.",
     once: "A few minutes, only once. Bavard starts by itself when it is done.",
   },
@@ -209,7 +211,7 @@ const en: Strings = {
     tts: "Voice",
     ttsKokoro: "Kokoro",
     ttsKyutai: "Kyutai 1.6B",
-    kyutaiNote: "Kyutai options need moshi_mlx (manual install, see README).",
+    kyutaiNote: "Kyutai options load when the engine restarts (~1.5 GB of models to download the first time).",
     overBudget: (need: number, budget: number) =>
       `Disabled: ~${need} GB, more than the ${budget} GB macOS recommends for the GPU on this Mac.`,
     memory: "Estimated memory",

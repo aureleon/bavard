@@ -254,8 +254,11 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
     }
     let python = paths.venv_python();
     let requirements = paths.engine_dir.join("requirements.txt");
-    let wanted = std::fs::read_to_string(&requirements)
-        .map_err(|e| format!("read {}: {e}", requirements.display()))?;
+    let kyutai = paths.engine_dir.join("requirements-kyutai.txt");
+    let mut wanted = String::new();
+    for f in [&requirements, &kyutai] {
+        wanted += &std::fs::read_to_string(f).map_err(|e| format!("read {}: {e}", f.display()))?;
+    }
 
     if paths.dev {
         // The repo venv is managed by run.sh.
@@ -278,7 +281,7 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
     if python.exists() && std::fs::read_to_string(&marker).ok().as_deref() == Some(wanted.as_str()) {
         return Ok(python);
     }
-    let result = install(app, paths, &python, &requirements);
+    let result = install(app, paths, &python, &requirements, &kyutai);
     match &result {
         Ok(()) => {
             std::fs::write(&marker, wanted).map_err(|e| e.to_string())?;
@@ -290,7 +293,13 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
     result.map(|_| python)
 }
 
-fn install(app: &AppHandle, paths: &Paths, python: &Path, requirements: &Path) -> Result<(), String> {
+fn install(
+    app: &AppHandle,
+    paths: &Paths,
+    python: &Path,
+    requirements: &Path,
+    kyutai: &Path,
+) -> Result<(), String> {
     log_line(paths, &format!("\n=== setup {}", paths.venv_dir.display()));
     if !python.exists() {
         emit(app, "find_python", None);
@@ -317,5 +326,13 @@ fn install(app: &AppHandle, paths: &Paths, python: &Path, requirements: &Path) -
         Command::new(python)
             .args(["-m", "pip", "install", "--progress-bar", "off", "-r"])
             .arg(requirements),
+    )?;
+    // moshi_mlx pins an MLX that would break Gemma 4: no dependencies.
+    run_logged(
+        app,
+        "kyutai",
+        Command::new(python)
+            .args(["-m", "pip", "install", "--progress-bar", "off", "--no-deps", "-r"])
+            .arg(kyutai),
     )
 }

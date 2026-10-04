@@ -59,7 +59,8 @@
       "../../tutor.py": "engine/tutor.py",
       "../../requirements.txt": "engine/requirements.txt",
       "../../prompts/tutor.txt": "engine/prompts/tutor.txt",
-      "../../prompts/hear.txt": "engine/prompts/hear.txt"
+      "../../prompts/hear.txt": "engine/prompts/hear.txt",
+      "../../requirements-kyutai.txt": "engine/requirements-kyutai.txt"
     },
     "macOS": {
       "minimumSystemVersion": "14.0",
