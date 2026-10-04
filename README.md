@@ -203,6 +203,49 @@ Kyutai STT uses the `kyutai/stt-1b-en_fr-candle` weights, which include the end-
 
 Keep the default `--kyutai-bits 8`. In bf16 (`--kyutai-bits 0`), Kyutai is ~3× slower, which is slower than real time, so you will hear gaps between sentences.
 
+## Desktop app (`app/`)
+
+A native macOS app (Tauri v2 + Svelte 5) wraps the same engine. It has two panes: an audio orb with push-to-talk on the left, and the live transcript with corrections on the right. See [VOICE_APP_SPEC.md](VOICE_APP_SPEC.md) for the design.
+
+The app runs `serve.py`, a sidecar that speaks JSON lines on stdin/stdout (the protocol is in its docstring). The Rust shell starts the sidecar, sends it commands, and kills its process group on `Cmd + Q`, so all model memory goes back to macOS at once.
+
+Requirements: Rust (stable), Node 20+ and pnpm, plus everything listed above.
+
+```bash
+./run.sh             # once: creates .venv and downloads the models (then quit with q)
+cd app
+pnpm install
+pnpm tauri dev       # development: uses the repo .venv and prompts/
+pnpm tauri build     # release: src-tauri/target/release/bundle/{macos,dmg}/
+```
+
+In development, the app uses the repo `.venv` and `prompts/`. A release build bundles `serve.py`, `tutor.py`, `requirements.txt` and the prompts. On first launch, it creates its own venv in `~/Library/Application Support/fr.bavard.tutor/venv` (this needs Python 3.12+ on the Mac). It also copies the prompts there so you can edit them (Settings, then **Open prompts**). Models are downloaded to the Hugging Face cache, with a progress bar. The sidecar log is in `~/Library/Logs/fr.bavard.tutor/engine.log`.
+
+`pnpm dev` alone opens the UI in a browser with a scripted mock engine. Use it to work on the UI without loading the models.
+
+### App controls
+
+| Key | Action |
+|---|---|
+| `Cmd + Shift + Space` | Show or hide the window (from any app) |
+| Hold `Space` | Push-to-talk. Release to send. Pressing it while the tutor talks interrupts the tutor. |
+| Hold `Shift` | Show the English translation |
+| `r` / `Alt + r` | Replay the last reply / replay it at 0.8x |
+| `+` / `-` | Speed ±0.05x (the slider goes from 0.75x to 1.25x) |
+| `Cmd + ,` | Settings: turn mode, hearing, voice, interface language |
+| `Esc` | Hide the window (hands-free modes also close the mic) |
+| `Cmd + Q` | Quit and free the memory |
+
+Click the speaker icon on a tutor line to replay it (`Alt`-click: 0.8x). Green underlines mark useful A2/B1 expressions; hover one to see its dictionary form and translation. Translations and vocabulary come from separate Gemma calls that do not use the tutor's prefix cache, so they never slow down the next turn. They run in the background after the tutor stops speaking.
+
+Turn mode and speed change at once. A new hearing method or voice restarts the sidecar (~10 s). The app does not offer Kyutai STT together with Kyutai TTS (~11 GB).
+
+To check the sidecar without the app:
+
+```bash
+echo '{"cmd":"text_turn","text":"Je suis allé à le marché."}' | ./.venv/bin/python serve.py --mute --no-greet
+```
+
 ## Limitations
 
 - **The transcript is useful, not perfect.** Even when told to keep errors, Gemma sometimes fixes them silently.
