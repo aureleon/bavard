@@ -25,6 +25,7 @@ import json
 import os
 import queue
 import re
+import shlex
 import sys
 import threading
 import time
@@ -46,6 +47,14 @@ SAMPLE_RATE = 16000        # Gemma audio, Whisper, Silero VAD
 KYUTAI_SAMPLE_RATE = 24000  # Kyutai STT (Mimi codec)
 SEMANTIC_FALLBACK_S = 3.0   # --turn semantic: end the turn after this much silence anyway
 MAX_AUDIO_SECONDS = 30  # Gemma 4 audio encoder limit (480,000 samples at 16 kHz)
+
+# Install hint for moshi_mlx; targets whichever interpreter is running this script.
+_PIP = f"{shlex.quote(sys.executable)} -m pip"
+MOSHI_INSTALL_HINT = (
+    "Install it without its pinned dependencies (see README):\n"
+    f"   {_PIP} install --no-deps moshi_mlx rustymimi sphn\n"
+    f"   {_PIP} install aiohttp sentencepiece"
+)
 
 MODEL_ALIASES = {
     # Gemma 4: text + native audio input (works with every --input)
@@ -155,9 +164,7 @@ class KyutaiListener:
             import sentencepiece
             from moshi_mlx import models, utils
         except ImportError:
-            sys.exit("❌ Kyutai STT needs moshi_mlx. Install it without its pinned dependencies (see README):\n"
-                     "   ./.venv/bin/pip install --no-deps moshi_mlx rustymimi sphn\n"
-                     "   ./.venv/bin/pip install aiohttp sentencepiece")
+            sys.exit(f"❌ Kyutai STT needs moshi_mlx. {MOSHI_INSTALL_HINT}")
         from huggingface_hub import hf_hub_download
 
         label = f"q{self.quantize_bits}" if self.quantize_bits else "bf16"
@@ -442,9 +449,7 @@ class KyutaiSpeaker:
             import sentencepiece
             from moshi_mlx import models
         except ImportError:
-            sys.exit("❌ Kyutai TTS needs moshi_mlx. Install it without its pinned dependencies (see README):\n"
-                     "   ./.venv/bin/pip install --no-deps moshi_mlx rustymimi sphn\n"
-                     "   ./.venv/bin/pip install aiohttp sentencepiece")
+            sys.exit(f"❌ Kyutai TTS needs moshi_mlx. {MOSHI_INSTALL_HINT}")
         from moshi_mlx.models.tts import TTSModel, DEFAULT_DSM_TTS_REPO, DEFAULT_DSM_TTS_VOICE_REPO
         from moshi_mlx.utils.loaders import hf_get
 
