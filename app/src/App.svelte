@@ -4,6 +4,7 @@
   import Overlay from "./components/Overlay.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
   import Transcript from "./components/Transcript.svelte";
+  import { inTauri } from "./lib/bridge";
   import { session } from "./lib/session.svelte";
 
   const t = $derived(session.t);
@@ -70,10 +71,10 @@
 
 <svelte:window onkeydown={keydown} onkeyup={keyup} onblur={blur} />
 
-<div class="relative flex h-full overflow-hidden rounded-[18px] bg-neutral-950/55 text-white ring-1 ring-white/10">
+<div class="relative flex h-full overflow-hidden bg-neutral-950/55 text-white {inTauri ? '' : 'rounded-[18px] ring-1 ring-white/10'}">
   <!-- Left: the sonic engine -->
   <div class="relative flex w-[40%] min-w-[300px] flex-col border-r border-white/[0.07]">
-    <div data-tauri-drag-region class="flex h-10 shrink-0 items-center gap-2 px-4">
+    <div data-tauri-drag-region class="flex h-11 shrink-0 items-center gap-2 pr-4 {inTauri ? 'pl-[84px]' : 'pl-4'}">
       <span data-tauri-drag-region class="text-[12px] font-semibold tracking-wide text-white/70">Bavard</span>
       {#if session.config}
         <span data-tauri-drag-region class="text-[10px] text-white/30">{session.config.model.split("/").at(-1)}</span>
@@ -86,7 +87,7 @@
 
   <!-- Right: the safety net -->
   <div class="relative flex min-w-0 flex-1 flex-col">
-    <div data-tauri-drag-region class="flex h-10 shrink-0 items-center justify-end gap-1 px-3">
+    <div data-tauri-drag-region class="flex h-11 shrink-0 items-center justify-end gap-1 px-3">
       <span data-tauri-drag-region class="mr-auto text-[10px] tracking-wide text-white/35">
         {session.translating ? "EN" : t.shiftHint}
       </span>
@@ -100,16 +101,6 @@
           <path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke-linecap="round" />
           <circle cx="16" cy="7" r="2" />
           <circle cx="10" cy="17" r="2" />
-        </svg>
-      </button>
-      <button
-        class="rounded-md p-1.5 text-white/45 hover:bg-white/10 hover:text-white"
-        title={t.hide}
-        aria-label={t.hide}
-        onclick={() => session.bridge?.hide()}
-      >
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.7">
-          <path d="M6 12h12" stroke-linecap="round" />
         </svg>
       </button>
     </div>

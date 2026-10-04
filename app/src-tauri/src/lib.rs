@@ -8,7 +8,7 @@ use settings::Settings;
 use setup::Paths;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 struct AppState {
@@ -180,6 +180,14 @@ pub fn run() {
                 eprintln!("cannot register Cmd+Shift+Space: {e}");
             }
             Ok(())
+        })
+        // The red traffic light hides the HUD (summon it again with
+        // Cmd+Shift+Space); Cmd+Q quits and frees the model memory.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                hide(window.app_handle());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
