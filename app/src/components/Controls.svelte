@@ -65,11 +65,11 @@
         {/if}
       </svg>
       <span
-        class="grid h-[84px] w-[84px] place-items-center rounded-full text-center text-[10px] leading-tight font-semibold tracking-wider transition {session.listeningOff
+        class="flex h-[84px] w-[84px] flex-col items-center justify-center gap-1 rounded-full text-center text-[10px] leading-none font-semibold tracking-wider transition {session.listeningOff
           ? 'bg-white/[0.12] text-white/70'
           : 'bg-emerald-300/90 text-slate-900'}"
       >
-        <svg viewBox="0 0 24 24" class="mb-0.5 h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
+        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
           <rect x="9" y="3" width="6" height="11" rx="3" />
           <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" stroke-linecap="round" />
           {#if session.listeningOff}<path d="M4 4l16 16" stroke-linecap="round" />{/if}
