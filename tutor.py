@@ -2,18 +2,49 @@
 """
 Bavard - local French voice tutor on Apple Silicon (MLX).
 
-Pipeline (one turn):
-  1. Capture   : push-to-talk (--turn ptt), hands-free with Silero VAD and a
-                 fixed silence (--turn vad), or hands-free with Kyutai STT
-                 semantic end-of-turn detection (--turn semantic)
-  2. Hear      : Gemma 4 native audio input (--input audio, default),
-                 MLX Whisper (--input whisper), or streaming Kyutai STT
-                 (--input kyutai, transcribes while you speak)
-                 -> TRANSCRIPTION (audible errors kept) [+ PRONONCIATION notes]
-  3. Tutor     : text-only LLM call over the chat history (prefix-cached)
-                 -> CORRECTION (shown on screen) + RÉPONSE (spoken)
-  4. Speak     : RÉPONSE is streamed to TTS while it is still generating.
-                 The first chunk is cut at the first comma for fast first audio.
+Input matrix (3 x 3 x 2 = 18 combinations, the choices are independent):
+
+  Flag      Option            What it does
+  --------  ----------------  ------------------------------------------------
+  --stt     audio (default)   Gemma 4 hears your voice and keeps audible errors
+            whisper           MLX Whisper; fast, but often fixes your errors
+            kyutai            Kyutai STT 1B; transcribes while you speak
+
+  --turn    ptt (default)     push-to-talk: press Enter to start and to stop
+            vad               hands-free: Silero VAD, ends after --silence secs
+            semantic          hands-free: Kyutai STT predicts end of sentence
+
+  --tts     kokoro (default)  Kokoro-82M; fast first audio (~2 s)
+            kyutai            Kyutai TTS 1.6B q8; streamed frame by frame
+
+  --turn semantic loads Kyutai STT for turn-taking only. With --stt audio or
+  whisper, Gemma or Whisper still makes the transcript (hybrid mode).
+  All Kyutai options need moshi_mlx (see README).
+
+Quantization:
+
+  Model               Used for       Weights             Flag               Notes
+  ------------------  -------------  ------------------  -----------------  ---------------------------
+  Gemma 4 E4B / E2B   tutor, STT     4-bit (MLX)         --model            fixed by the HF repo
+
+  Gemma 4 12B         tutor, STT     4-bit QAT (MLX)     --model gemma-12b  audio input not tested
+
+  Qwen 2.5 / Mistral  tutor          4-bit (MLX)         --model            needs --stt whisper/kyutai
+
+  Whisper base (74M)  STT            fp16 (MLX)          --whisper-model    ~144 MB; pick another repo
+
+  Kyutai STT 1B       STT, turn end  q8 (default)        --kyutai-stt-bits  8, 4 or 0 = bf16; q8 = bf16
+                                                                            transcripts, ~0.75 GB less
+
+  Kyutai TTS 1.6B     TTS            q8 (default)        --kyutai-bits      8, 4 or 0 = bf16; bf16 is
+                                                                            ~3x slower (audio gaps)
+
+  Kokoro-82M          TTS            fp32 (PyTorch)      -                  not quantized
+
+  Silero VAD          turn end       fp32 (TorchScript)  -                  tiny (~2 MB)
+
+The tutor reply has two parts: CORRECTION (shown on screen) and RÉPONSE
+(spoken). RÉPONSE goes to TTS while it is still generating.
 
 The hear stage runs without chat history. Only the text transcript enters the
 history, so the history stays text-only and the KV prefix cache is reused on
@@ -57,11 +88,11 @@ MOSHI_INSTALL_HINT = (
 )
 
 MODEL_ALIASES = {
-    # Gemma 4: text + native audio input (works with every --input)
+    # Gemma 4: text + native audio input (works with every --stt)
     "gemma-e4b": "mlx-community/gemma-4-e4b-it-4bit",
     "gemma-e2b": "mlx-community/gemma-4-e2b-it-4bit",
     "gemma-12b": "mlx-community/gemma-4-12B-it-qat-OptiQ-4bit",
-    # Text-only models (use with --input whisper or --input kyutai)
+    # Text-only models (use with --stt whisper or --stt kyutai)
     "qwen-3b": "mlx-community/Qwen2.5-3B-Instruct-4bit",
     "qwen-7b": "mlx-community/Qwen2.5-7B-Instruct-4bit",
     "mistral": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
@@ -926,7 +957,7 @@ def handle_command(cmd, speech, tutor, last_reply):
 
 def main():
     parser = argparse.ArgumentParser(description="Bavard - French voice tutor with Apple MLX")
-    parser.add_argument("--input", choices=["audio", "whisper", "kyutai"], default="audio",
+    parser.add_argument("--stt", "--input", dest="stt", choices=["audio", "whisper", "kyutai"], default="audio",
                         help="'audio' : Gemma 4 entend ta voix directement (défaut). "
                              "'whisper' : transcription par MLX Whisper. "
                              "'kyutai' : transcription en direct par Kyutai STT 1B.")
@@ -959,7 +990,7 @@ def main():
     parser.add_argument("--hear-prompt", default=os.path.join(PROMPTS_DIR, "hear.txt"),
                         help="Mode audio : fichier du prompt de transcription (défaut: prompts/hear.txt)")
     parser.add_argument("--whisper-model", default="mlx-community/whisper-base-mlx",
-                        help="--input whisper : modèle MLX Whisper (défaut: whisper-base-mlx)")
+                        help="--stt whisper : modèle MLX Whisper (défaut: whisper-base-mlx)")
     args = parser.parse_args()
 
     model_repo = MODEL_ALIASES.get(args.model.lower(), args.model)
@@ -970,7 +1001,7 @@ def main():
     print(f"• LLM:      {model_repo}")
     stt_label = f"q{args.kyutai_stt_bits}" if args.kyutai_stt_bits else "bf16"
     print("• Écoute:   " + {"audio": "Gemma audio natif", "whisper": f"Whisper {args.whisper_model}",
-                            "kyutai": f"Kyutai STT 1B {stt_label} (streaming)"}[args.input])
+                            "kyutai": f"Kyutai STT 1B {stt_label} (streaming)"}[args.stt])
     print("• Tour:     " + {"ptt": "Push-to-talk (Entrée)",
                             "vad": f"Mains libres (Silero VAD, silence {args.silence}s)",
                             "semantic": f"Mains libres (fin de phrase Kyutai STT {stt_label})"}[args.turn])
@@ -980,16 +1011,16 @@ def main():
     def show(path):
         rel = os.path.relpath(path)
         return path if rel.startswith("..") else rel
-    print(f"• Prompts:  {show(args.tutor_prompt)}" + (f", {show(args.hear_prompt)}" if args.input == "audio" else ""))
+    print(f"• Prompts:  {show(args.tutor_prompt)}" + (f", {show(args.hear_prompt)}" if args.stt == "audio" else ""))
     print("=" * 60 + "\n")
 
     tutor_prompt = load_prompt(args.tutor_prompt, "tutor")
-    hear_prompt = load_prompt(args.hear_prompt, "hear") if args.input == "audio" else ""
+    hear_prompt = load_prompt(args.hear_prompt, "hear") if args.stt == "audio" else ""
     tutor = Tutor(model_repo, args.max_context, args.temperature, tutor_prompt, hear_prompt)
-    if args.input == "audio" and not tutor.supports_audio:
-        sys.exit(f"❌ {model_repo} n'accepte pas l'audio. Utilise --input whisper, --input kyutai ou un modèle Gemma 4.")
+    if args.stt == "audio" and not tutor.supports_audio:
+        sys.exit(f"❌ {model_repo} n'accepte pas l'audio. Utilise --stt whisper, --stt kyutai ou un modèle Gemma 4.")
 
-    if args.input == "whisper":
+    if args.stt == "whisper":
         import mlx_whisper
         print(f"⚡ Chargement de Whisper ({args.whisper_model})...")
         mlx_whisper.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32),
@@ -1014,7 +1045,7 @@ def main():
     speaker = speech.speaker
 
     listener = None
-    if args.input == "kyutai" or args.turn == "semantic":
+    if args.stt == "kyutai" or args.turn == "semantic":
         try:
             listener = KyutaiListener(quantize_bits=args.kyutai_stt_bits, eot_threshold=args.eot_threshold)
         except SystemExit:
@@ -1031,7 +1062,7 @@ def main():
 
     tutor.seed_greeting(GREETING)
     print("🔥 Préchauffage...")
-    tutor.warm_up(audio=args.input == "audio")
+    tutor.warm_up(audio=args.stt == "audio")
     last_reply = GREETING
     print(f"🇫🇷 Tuteur: {GREETING}\n")
     speech.say(GREETING)
@@ -1081,12 +1112,12 @@ def main():
 
             # ---- 2. hear ----------------------------------------------------
             pron = None
-            if listener and args.input != "kyutai":
+            if listener and args.stt != "kyutai":
                 listener.finish(flush=False)  # end the live transcript line
-            if args.input == "audio":
+            if args.stt == "audio":
                 print("👂 Écoute (Gemma audio)...")
                 transcript, pron = tutor.hear(audio)
-            elif args.input == "whisper":
+            elif args.stt == "whisper":
                 print("⚡ Transcription (Whisper)...")
                 transcript = mlx_whisper.transcribe(audio, path_or_hf_repo=args.whisper_model,
                                                     language="fr").get("text", "").strip()

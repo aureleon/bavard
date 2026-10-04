@@ -13,9 +13,9 @@ Each turn has four stages:
    - `--turn vad`: hands-free. Silero VAD ends the turn after 1.2 s of silence (`--silence`).
    - `--turn semantic`: hands-free. Kyutai STT predicts the end of your sentence from what you said, usually ~0.5 s after you stop. A live transcript appears while you speak.
 2. **Hear:** three methods.
-   - `--input audio` (default): **Gemma 4 E4B listens to your voice directly.** A short audio-only pass returns a transcript that **keeps the mistakes you can hear** ("à le", "je avoir") and uses standard spelling for anything that sounds the same. It also notes audible pronunciation problems.
-   - `--input whisper`: `mlx-whisper` makes the transcript. It is fast, but Whisper often fixes your mistakes silently.
-   - `--input kyutai`: Kyutai STT 1B (q8) **transcribes while you speak**, so the transcript is ready almost as soon as you stop. It keeps some mistakes, fixes others, and sometimes adds words ("je achète" → "je l'achète"). It has no prompt, so this cannot be tuned.
+   - `--stt audio` (default): **Gemma 4 E4B listens to your voice directly.** A short audio-only pass returns a transcript that **keeps the mistakes you can hear** ("à le", "je avoir") and uses standard spelling for anything that sounds the same. It also notes audible pronunciation problems.
+   - `--stt whisper`: `mlx-whisper` makes the transcript. It is fast, but Whisper often fixes your mistakes silently.
+   - `--stt kyutai`: Kyutai STT 1B (q8) **transcribes while you speak**, so the transcript is ready almost as soon as you stop. It keeps some mistakes, fixes others, and sometimes adds words ("je achète" → "je l'achète"). It has no prompt, so this cannot be tuned.
 3. **Tutor:** `Gemma 4 E4B` (4-bit, via `mlx-vlm`) answers in a fixed format:
    ```
    CORRECTION: <corrected sentence + short explanation, or "RAS">   ← shown on screen
@@ -34,11 +34,11 @@ The three choices are independent, so there are 18 combinations (3 inputs × 3 t
 
 | Choice | Options |
 |---|---|
-| `--input` | `audio` (default), `whisper`, `kyutai` |
+| `--stt` | `audio` (default), `whisper`, `kyutai` |
 | `--turn` | `ptt` (default), `vad`, `semantic` |
 | `--tts` | `kokoro` (default), `kyutai` |
 
-`--turn semantic` loads Kyutai STT even with `--input audio` or `--input whisper`. Kyutai then only decides when your turn ends and shows the live transcript. Gemma or Whisper still makes the transcript that the tutor reads. With `--input audio`, this is the hybrid mode: fast turn-taking, and your mistakes are kept.
+`--turn semantic` loads Kyutai STT even with `--stt audio` or `--stt whisper`. Kyutai then only decides when your turn ends and shows the live transcript. Gemma or Whisper still makes the transcript that the tutor reads. With `--stt audio`, this is the hybrid mode: fast turn-taking, and your mistakes are kept.
 
 ### Memory and speed
 
@@ -49,8 +49,8 @@ Peak memory measured on an M4 Pro:
 | Setup | Peak memory |
 |---|---|
 | Gemma + Kokoro (+ Silero VAD) | ~5.9 GB |
-| + Whisper (`--input whisper`) | ~6.1 GB |
-| + Kyutai STT q8 (`--input kyutai` or `--turn semantic`) | ~7.2 GB (~7.9 GB in bf16) |
+| + Whisper (`--stt whisper`) | ~6.1 GB |
+| + Kyutai STT q8 (`--stt kyutai` or `--turn semantic`) | ~7.2 GB (~7.9 GB in bf16) |
 | Gemma + Kyutai TTS q8 | ~10.0 GB |
 | Gemma + Kyutai STT q8 + Kyutai TTS q8 | ~11.2 GB |
 
@@ -58,7 +58,7 @@ For a 10 GB budget, do not combine Kyutai STT with Kyutai TTS.
 
 Timings measured on an M4 Pro with Kokoro (expect about half the token speed on a base M4). "Turn end" is the time from the end of your speech until the turn closes. In push-to-talk, that is when you press Enter.
 
-| Stage | `--input audio` | `--input whisper` | `--input kyutai` |
+| Stage | `--stt audio` | `--stt whisper` | `--stt kyutai` |
 |---|---|---|---|
 | Hear, after the turn ends | ~0.8–0.9 s | ~0.07 s | ~0.1–0.7 s (flushes the last words) |
 | Tutor TTFT (prefix cache hit) | ~0.06 s | ~0.13 s | ~0.13 s |
@@ -113,11 +113,11 @@ Hands-free modes (`--turn vad`, `--turn semantic`): just talk. Press **Ctrl+C** 
 ./run.sh
 
 # Whisper speech-to-text instead of Gemma audio input
-./run.sh --input whisper
-./run.sh --input whisper --whisper-model mlx-community/whisper-large-v3-turbo
+./run.sh --stt whisper
+./run.sh --stt whisper --whisper-model mlx-community/whisper-large-v3-turbo
 
 # Kyutai STT, streaming (needs the Kyutai setup below; --kyutai-stt-bits 4, 8 or 0 = bf16)
-./run.sh --input kyutai
+./run.sh --stt kyutai
 
 # Hands-free, end of turn after a silence (longer pause for slow speakers)
 ./run.sh --turn vad
@@ -128,12 +128,12 @@ Hands-free modes (`--turn vad`, `--turn semantic`): just talk. Press **Ctrl+C** 
 ./run.sh --turn semantic --eot-threshold 0.8   # higher = waits for more certainty
 
 # Combine freely
-./run.sh --input kyutai --turn semantic
-./run.sh --input whisper --turn vad
+./run.sh --stt kyutai --turn semantic
+./run.sh --stt whisper --turn vad
 
-# Other models: gemma-e2b, gemma-12b (audio input), qwen-3b, qwen-7b, mistral (text only → --input whisper or kyutai)
+# Other models: gemma-e2b, gemma-12b (audio input), qwen-3b, qwen-7b, mistral (text only → --stt whisper or kyutai)
 ./run.sh --model gemma-e2b
-./run.sh --model qwen-3b --input whisper
+./run.sh --model qwen-3b --stt whisper
 
 # Kyutai TTS 1.6B, 8-bit MLX quantization (default; --kyutai-bits 4 or 0 = bf16)
 # Needs a manual install first, see "Kyutai setup" below
@@ -158,7 +158,7 @@ The system prompts are plain text files. Edit them directly, then restart Bavard
 | File | Used by | Purpose |
 |---|---|---|
 | `prompts/tutor.txt` | every turn | Tutor persona, level (A1/A2 by default), correction rules, reply format |
-| `prompts/hear.txt` | `--input audio` | How Gemma transcribes your voice (keep audible mistakes, standard spelling for silent ones) |
+| `prompts/hear.txt` | `--stt audio` | How Gemma transcribes your voice (keep audible mistakes, standard spelling for silent ones) |
 
 Keep the output markers, because the code parses them:
 
@@ -174,7 +174,7 @@ Bavard warns at startup if a marker is missing. To keep several versions, pass a
 
 ### Kyutai setup (TTS and STT)
 
-Kyutai TTS (`--tts kyutai`), Kyutai STT (`--input kyutai`) and `--turn semantic` all need `moshi_mlx`. It pins an old MLX version that conflicts with Gemma 4 support in `mlx-vlm`. For that reason it is not in `requirements.txt`. Install it without its pinned dependencies:
+Kyutai TTS (`--tts kyutai`), Kyutai STT (`--stt kyutai`) and `--turn semantic` all need `moshi_mlx`. It pins an old MLX version that conflicts with Gemma 4 support in `mlx-vlm`. For that reason it is not in `requirements.txt`. Install it without its pinned dependencies:
 
 ```bash
 ./.venv/bin/pip install --no-deps moshi_mlx rustymimi sphn
@@ -202,11 +202,11 @@ Keep the default `--kyutai-bits 8`. In bf16 (`--kyutai-bits 0`), Kyutai is ~3× 
 ## Limitations
 
 - **The transcript is useful, not perfect.** Even when told to keep errors, Gemma sometimes fixes them silently.
-- **Silent spelling can still be "corrected".** The tutor is told to correct only audible mistakes. But if the transcript itself has a spelling mistake that sounds the same (possible with `--input whisper` or `--input kyutai`), the tutor often corrects it anyway.
+- **Silent spelling can still be "corrected".** The tutor is told to correct only audible mistakes. But if the transcript itself has a spelling mistake that sounds the same (possible with `--stt whisper` or `--stt kyutai`), the tutor often corrects it anyway.
 - **Tested with synthetic speech.** The timings and transcript checks use macOS TTS sentences, not real learner voices.
 - **Pronunciation feedback is coarse.** Gemma notices clearly wrong words or vowels. It does not give phoneme-level scores.
 - **`--turn semantic` can cut you off during long pauses.** In the tests, pauses of ~0.9 s in the middle of a sentence ("je voudrais… comment dire…") were taken as the end of the turn. Raising `--eot-threshold` does not help, because the model is very confident in those pauses. If this happens often, use `--turn vad` with a longer `--silence`.
-- **Kyutai STT cannot be prompted.** It has no instructions input, so it cannot be told to keep your mistakes. Use `--input audio` (alone or with `--turn semantic`) for error detection.
+- **Kyutai STT cannot be prompted.** It has no instructions input, so it cannot be told to keep your mistakes. Use `--stt audio` (alone or with `--turn semantic`) for error detection.
 - **Audio turns are limited to 30 s** (the Gemma 4 audio encoder limit). Longer recordings are cut.
 - `gemma-12b` audio input has not been tested.
 
