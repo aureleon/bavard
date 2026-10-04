@@ -1,7 +1,16 @@
 // Scripted stand-in for serve.py, used only outside Tauri (browser dev).
 
 import type { Bridge } from "./bridge";
-import type { EngineEvent, Settings } from "./types";
+import type { EngineEvent, Prompts, Settings } from "./types";
+
+const TUTOR = `Tu es un tuteur de français bienveillant et encourageant pour un élève débutant (niveau A1/A2).
+Réponds TOUJOURS avec exactement ce format, en texte brut (pas de markdown) :
+CORRECTION: <la phrase corrigée et une explication très courte, ou "RAS" s'il n'y a pas de faute>
+RÉPONSE: <2 à 3 phrases courtes en français simple, qui finissent par une question ouverte>`;
+const HEAR = `Tu es un transcripteur pour un professeur de français.
+Format de sortie (deux lignes, rien d'autre) :
+TRANSCRIPTION: <mots prononcés>
+PRONONCIATION: <problèmes de prononciation audibles, ou "RAS">`;
 
 const REPLIES = [
   {
@@ -44,6 +53,10 @@ export function mockBridge(): Bridge {
   let n = 0;
   let speed = 0.92;
   const turns: Record<number, (typeof REPLIES)[number]> = {};
+  const prompts: Prompts = {
+    tutor: { text: TUTOR, default: TUTOR, path: "prompts/tutor.txt" },
+    hear: { text: HEAR, default: HEAR, path: "prompts/hear.txt" },
+  };
 
   const setState = (s: EngineState) => {
     state = s;
@@ -192,6 +205,12 @@ export function mockBridge(): Bridge {
       }
     },
     openPrompts: async () => {},
+    readPrompts: async () => structuredClone(prompts),
+    writePrompt: async (name, text) => {
+      prompts[name].text = text;
+      await sleep(400);
+      emit({ event: "prompts_reloaded", seconds: 0.6 });
+    },
     openLog: async () => {},
     hide: async () => {},
     onEngine: (cb) => void engineCbs.push(cb),

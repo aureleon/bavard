@@ -14,6 +14,7 @@ import type {
 } from "./types";
 
 export type Phase = "boot" | "setup" | "loading" | "ready" | "crashed";
+export type View = "chat" | "prompts" | "settings";
 
 /** Audio levels change ~30x per second; the orb reads them directly, so
  * they live outside the reactive state. */
@@ -44,6 +45,8 @@ export class Session {
   }
 
   phase = $state<Phase>("boot");
+  view = $state<View>("chat");
+  promptsReloadedAt = $state(0);
   state = $state<EngineState>("loading");
   mic = $state(false);
   paused = $state(false);
@@ -231,6 +234,10 @@ export class Session {
         break;
       case "mode":
         this.mode = e.mode;
+        break;
+      case "prompts_reloaded":
+        this.promptsReloadedAt = Date.now();
+        this.showNotice(this.t.prompts.reloaded);
         break;
       case "error":
         this.showNotice(e.message);

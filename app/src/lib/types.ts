@@ -94,6 +94,7 @@ export type EngineEvent =
   | { event: "stats"; context_tokens: number; max_context: number; turns: number; speed: number }
   | { event: "speed"; speed: number }
   | { event: "mode"; mode: TurnMode }
+  | { event: "prompts_reloaded"; seconds: number }
   | { event: "error"; message: string }
   | { event: "fatal"; message: string }
   | { event: "bye" };
@@ -108,3 +109,18 @@ export interface SetupEvent {
   stage: string;
   line: string | null;
 }
+
+export interface PromptFile {
+  text: string;
+  default: string;
+  path: string;
+}
+
+export type PromptName = "tutor" | "hear";
+export type Prompts = Record<PromptName, PromptFile>;
+
+/** Markers the engine parses; a prompt must ask for all of them. */
+export const PROMPT_MARKERS: Record<PromptName, string[]> = {
+  tutor: ["CORRECTION:", "RÉPONSE:"],
+  hear: ["TRANSCRIPTION:", "PRONONCIATION:"],
+};

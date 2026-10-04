@@ -2,7 +2,7 @@
 // it falls back to a scripted mock engine, so the UI can be developed and
 // screenshotted without the models.
 
-import type { EngineEvent, EngineExit, Settings, SetupEvent } from "./types";
+import type { EngineEvent, EngineExit, PromptName, Prompts, Settings, SetupEvent } from "./types";
 
 export interface Bridge {
   getSettings(): Promise<Settings>;
@@ -11,6 +11,8 @@ export interface Bridge {
   restart(): Promise<void>;
   send(msg: Record<string, unknown>): Promise<void>;
   openPrompts(): Promise<void>;
+  readPrompts(): Promise<Prompts>;
+  writePrompt(name: PromptName, text: string): Promise<void>;
   openLog(): Promise<void>;
   hide(): Promise<void>;
   onEngine(cb: (e: EngineEvent) => void): void;
@@ -30,6 +32,8 @@ async function tauriBridge(): Promise<Bridge> {
     restart: () => invoke("engine_restart"),
     send: (msg) => invoke("engine_send", { msg }),
     openPrompts: () => invoke("open_prompts"),
+    readPrompts: () => invoke<Prompts>("read_prompts"),
+    writePrompt: (name, text) => invoke("write_prompt", { name, text }),
     openLog: () => invoke("open_log"),
     hide: () => invoke("hide_window"),
     onEngine: (cb) => void listen<EngineEvent>("engine", (e) => cb(e.payload)),

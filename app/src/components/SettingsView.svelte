@@ -2,17 +2,11 @@
   import { memoryEstimate, session } from "../lib/session.svelte";
   import type { Settings } from "../lib/types";
 
-  let { open = $bindable(false) }: { open: boolean } = $props();
-
   const t = $derived(session.t);
   const s = $derived(t.settings);
 
   let draft = $state<Settings>($state.snapshot(session.settings!) as Settings);
 
-  // Reset the draft each time the panel opens.
-  $effect(() => {
-    if (open && session.settings) draft = $state.snapshot(session.settings) as Settings;
-  });
 
   const needsRestart = (a: Settings, b: Settings) =>
     a.stt !== b.stt || a.tts !== b.tts || a.silence !== b.silence || a.prefetch !== b.prefetch;
@@ -32,7 +26,7 @@
 
   function apply() {
     void session.applySettings(draft);
-    open = false;
+    session.view = "chat";
   }
 </script>
 
@@ -50,15 +44,8 @@
   </div>
 {/snippet}
 
-{#if open}
-  <button class="absolute inset-0 z-30 cursor-default bg-black/30" aria-label={s.close} onclick={() => (open = false)}></button>
-  <aside class="absolute top-0 right-0 bottom-0 z-40 flex w-[360px] flex-col bg-neutral-900/95 shadow-2xl ring-1 ring-white/10">
-    <header data-tauri-drag-region class="flex items-center justify-between px-5 pt-5 pb-3">
-      <h2 class="text-sm font-semibold text-white/90">{s.title}</h2>
-      <button class="rounded-md px-2 py-0.5 text-white/50 hover:bg-white/10 hover:text-white" onclick={() => (open = false)}>✕</button>
-    </header>
-
-    <div class="flex-1 space-y-5 overflow-y-auto px-5 pb-5 text-white/80">
+<div class="flex min-h-0 flex-1 flex-col">
+    <div class="mx-auto w-full max-w-md flex-1 space-y-5 overflow-y-auto px-6 pt-2 pb-5 text-white/80">
       <section>
         <h3 class="mb-1.5 text-[11px] font-semibold tracking-wider text-white/45 uppercase">{s.turn}</h3>
         {@render seg(
@@ -161,7 +148,7 @@
       </section>
 
       <section>
-        <button class="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] hover:bg-white/20" onclick={() => session.bridge.openPrompts()}>
+        <button class="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] hover:bg-white/20" onclick={() => (session.view = "prompts")}>
           {s.prompts}
         </button>
         <p class="mt-1.5 text-[11px] text-white/45">{s.promptsNote}</p>
@@ -181,11 +168,10 @@
     </div>
 
     {#if pending}
-      <footer class="border-t border-white/10 p-4">
+      <footer class="mx-auto w-full max-w-md border-t border-white/10 px-6 py-4">
         <button class="w-full rounded-lg bg-white py-2 text-sm font-medium text-slate-900 hover:bg-white/90" onclick={apply}>
           {s.restartNeeded}
         </button>
       </footer>
     {/if}
-  </aside>
-{/if}
+</div>
