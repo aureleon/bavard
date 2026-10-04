@@ -198,6 +198,15 @@ export function mockBridge(): Bridge {
         case "replay":
           if (state === "idle") await speak(1800);
           break;
+        case "translate_prompt": {
+          const fr = `Tu es un tuteur de français (traduit depuis l'anglais).\nCORRECTION: <...>\nRÉPONSE: <...>`;
+          for (let i = 8; i < fr.length; i += 8) {
+            emit({ event: "prompt_translation", name: msg.name as "tutor", req: msg.req as number, text: fr.slice(0, i), done: false });
+            await sleep(40);
+          }
+          emit({ event: "prompt_translation", name: msg.name as "tutor", req: msg.req as number, text: fr, done: true, missing: [] });
+          break;
+        }
         case "stop":
           src = null;
           setState("idle");

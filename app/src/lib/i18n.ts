@@ -111,6 +111,15 @@ const fr = {
     unsaved: "Modifié",
     reloaded: "Prompts appliqués. La conversation continue.",
     applyNote: "Appliquer garde la conversation et prend environ 1 s.",
+    langFr: "Français",
+    langEn: "English",
+    enHelp: "Écris le prompt en anglais. Gemma le traduit en français ; tu relis la traduction avant de l'appliquer. Garde les marqueurs (CORRECTION:, RÉPONSE:…) tels quels.",
+    enPlaceholder: "You are a kind French tutor for a beginner…",
+    translate: "Traduire en français",
+    translating: "Traduction par Gemma…",
+    translated: "Traduction prête : relis-la, puis « Enregistrer et appliquer ».",
+    translateMissing: (m: string) => `La traduction a perdu des marqueurs : ${m}. Ajoute-les avant d'enregistrer.`,
+    translateBusy: "Gemma traduit pendant ~15 s ; les tours de parole attendent la fin.",
   },
 };
 
@@ -227,6 +236,15 @@ const en: Strings = {
     unsaved: "Edited",
     reloaded: "Prompts applied. The conversation continues.",
     applyNote: "Applying keeps the conversation and takes about 1 s.",
+    langFr: "Français",
+    langEn: "English",
+    enHelp: "Write the prompt in English. Gemma translates it into French; you review the translation before applying it. Keep the markers (CORRECTION:, RÉPONSE:…) as they are.",
+    enPlaceholder: "You are a kind French tutor for a beginner…",
+    translate: "Translate to French",
+    translating: "Gemma is translating…",
+    translated: "Translation ready: review it, then “Save and apply”.",
+    translateMissing: (m: string) => `The translation lost some markers: ${m}. Add them before saving.`,
+    translateBusy: "Gemma translates for ~15 s; voice turns wait until it is done.",
   },
 };
 

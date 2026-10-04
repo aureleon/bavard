@@ -95,6 +95,7 @@ export type EngineEvent =
   | { event: "speed"; speed: number }
   | { event: "mode"; mode: TurnMode }
   | { event: "prompts_reloaded"; seconds: number }
+  | { event: "prompt_translation"; name: PromptName; req: number | null; text: string; done: boolean; missing?: string[] }
   | { event: "error"; message: string }
   | { event: "fatal"; message: string }
   | { event: "bye" };

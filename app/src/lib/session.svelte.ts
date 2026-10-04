@@ -11,6 +11,7 @@ import type {
   Turn,
   TurnMode,
   TurnStats,
+  PromptName,
 } from "./types";
 
 export type Phase = "boot" | "setup" | "loading" | "ready" | "crashed";
@@ -47,6 +48,9 @@ export class Session {
   phase = $state<Phase>("boot");
   view = $state<View>("chat");
   promptsReloadedAt = $state(0);
+  /** English prompt -> French translation in progress or just finished. */
+  promptTranslation = $state<{ req: number; name: PromptName; text: string; done: boolean; missing?: string[] } | null>(null);
+  #promptReq = 0;
   state = $state<EngineState>("loading");
   mic = $state(false);
   paused = $state(false);
@@ -235,6 +239,11 @@ export class Session {
       case "mode":
         this.mode = e.mode;
         break;
+      case "prompt_translation":
+        if (this.promptTranslation && e.req === this.promptTranslation.req) {
+          this.promptTranslation = { ...this.promptTranslation, text: e.text, done: e.done, missing: e.missing };
+        }
+        break;
       case "prompts_reloaded":
         this.promptsReloadedAt = Date.now();
         this.showNotice(this.t.prompts.reloaded);
@@ -259,6 +268,13 @@ export class Session {
   pttStop() {
     if (this.mode !== "ptt") return;
     this.send({ cmd: "ptt_stop" });
+  }
+
+  /** Ask Gemma to translate an English prompt into French (streamed). */
+  translatePrompt(name: PromptName, text: string) {
+    const req = ++this.#promptReq;
+    this.promptTranslation = { req, name, text: "", done: false };
+    this.send({ cmd: "translate_prompt", name, text, req });
   }
 
   stopVoice() {
