@@ -1,2 +1,14 @@
 __pycache__/
 .venv/
+.DS_Store
+
+# Desktop app: dependencies and build / distribution output
+node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/
+*.app/
+*.dmg
+*.pkg
+*.tar.gz
+*.app.tar.gz.sig
