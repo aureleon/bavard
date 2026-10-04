@@ -186,10 +186,13 @@ class KyutaiListener:
     BLOCK = 1920  # one 80 ms Mimi frame at 24 kHz
     MAX_STEPS = int((MAX_AUDIO_SECONDS + 5) / 0.08)
 
-    def __init__(self, quantize_bits=8, eot_threshold=0.5, live=True):
+    def __init__(self, quantize_bits=8, eot_threshold=0.5, live=True, on_partial=None):
         self.quantize_bits = quantize_bits
         self.eot_threshold = eot_threshold
         self.live = live
+        # on_partial(text): called on the Kyutai thread with the transcript so
+        # far, instead of printing it (used by the app sidecar).
+        self.on_partial = on_partial
         self.end_of_turn = threading.Event()
         self.q = queue.Queue()
         self.pieces = []
@@ -279,7 +282,9 @@ class KyutaiListener:
         if text_token not in (0, 3):  # 0 = padding, 3 = end of padding
             piece = self.text_tokenizer.id_to_piece(text_token).replace("▁", " ")
             self.pieces.append(piece)
-            if self.live:
+            if self.on_partial is not None:
+                self.on_partial(re.sub(r"\s+", " ", "".join(self.pieces)).strip())
+            elif self.live:
                 if not self.printed:
                     print("> ", end="")
                     self.printed = True
@@ -315,7 +320,7 @@ class KyutaiListener:
                         self._step(np.zeros(self.BLOCK, dtype=np.float32))
                         if self.pieces and self.pieces[-1].strip()[-1:] in (".", "?", "!"):
                             break
-                if cmd == "finish" and self.printed and self.live:
+                if cmd == "finish" and self.printed and self.live and self.on_partial is None:
                     print()
                     self.printed = False
             except Exception as e:
@@ -410,12 +415,19 @@ class VadRecorder:
             frame = resample_poly(frame, SAMPLE_RATE, self.rate).astype(np.float32)[: self.FRAME]
         return self.model(self.torch.from_numpy(np.ascontiguousarray(frame)), SAMPLE_RATE).item()
 
-    def record(self):
-        """Return the utterance at 16 kHz."""
+    def record(self, cancel=None, on_level=None, on_speech=None, quiet=False):
+        """Return the utterance at 16 kHz.
+
+        Embedding hooks (all optional): `cancel` is a threading.Event; when it
+        is set, record() returns None. `on_level(pcm)` gets every mic block (on
+        the audio thread). `on_speech()` is called when speech starts.
+        """
         frames_q = queue.Queue()
 
         def callback(indata, frames, time_info, status):
             frames_q.put(indata[:, 0].copy())
+            if on_level is not None:
+                on_level(indata[:, 0])
 
         self.model.reset_states()
         preroll, speech = [], []
@@ -425,10 +437,20 @@ class VadRecorder:
 
         with sd.InputStream(samplerate=self.rate, channels=1, dtype="float32",
                             blocksize=self.frame, callback=callback):
-            print(ui("J'écoute... (parle quand tu veux, Ctrl+C pour le menu)",
-                     "Listening... (speak whenever you like, Ctrl+C for the menu)"))
+            if not quiet:
+                print(ui("J'écoute... (parle quand tu veux, Ctrl+C pour le menu)",
+                         "Listening... (speak whenever you like, Ctrl+C for the menu)"))
             while True:
-                buf = np.concatenate([buf, frames_q.get()])
+                if cancel is not None:
+                    if cancel.is_set():
+                        return None
+                    try:
+                        block = frames_q.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                else:
+                    block = frames_q.get()
+                buf = np.concatenate([buf, block])
                 while len(buf) >= self.frame:
                     frame, buf = buf[: self.frame], buf[self.frame:]
                     is_speech = self._prob(frame) >= self.threshold
@@ -443,7 +465,10 @@ class VadRecorder:
                             if self.listener:
                                 self.listener.begin()
                                 self.listener.feed(np.concatenate(speech))
-                            print(ui("[Parole détectée...]", "[Speech detected...]"))
+                            if on_speech is not None:
+                                on_speech()
+                            if not quiet:
+                                print(ui("[Parole détectée...]", "[Speech detected...]"))
                         continue
 
                     speech.append(frame)
@@ -456,7 +481,8 @@ class VadRecorder:
                         silent_run += 1
 
                     if len(speech) >= self.max_frames:
-                        print(ui(f"Limite de {MAX_AUDIO_SECONDS}s atteinte.", f"{MAX_AUDIO_SECONDS} s limit reached."))
+                        if not quiet:
+                            print(ui(f"Limite de {MAX_AUDIO_SECONDS}s atteinte.", f"{MAX_AUDIO_SECONDS} s limit reached."))
                         return done(speech)
                     if self.semantic and self.listener.end_of_turn.is_set() and voiced >= self.min_speech_frames:
                         return done(speech)
@@ -601,6 +627,7 @@ class PcmPlayer:
         self.playing = False
         self.flushed = False  # True when no more audio is coming for now
         self.on_first_sound = None
+        self.on_level = None  # on_level(pcm): every output block, on the audio thread
         self.stream = sd.OutputStream(samplerate=sample_rate, channels=1, dtype="float32",
                                       blocksize=480, callback=self._callback)
         self.stream.start()
@@ -620,6 +647,14 @@ class PcmPlayer:
     def pending(self):
         with self.lock:
             return self.buffered
+
+    def clear(self):
+        """Drop everything not played yet (used to stop the tutor mid-sentence)."""
+        with self.lock:
+            self.pieces = []
+            self.buffered = 0
+            self.playing = False
+            self.flushed = True
 
     def _callback(self, outdata, frames, time_info, status):
         out = outdata[:, 0]
@@ -642,6 +677,8 @@ class PcmPlayer:
             self.buffered -= filled
             if self.buffered == 0:
                 self.playing = False  # underrun or end: re-arm the jitter buffer
+        if self.on_level is not None:
+            self.on_level(out)
         if filled and self.on_first_sound is not None:
             cb, self.on_first_sound = self.on_first_sound, None
             cb()
@@ -662,6 +699,7 @@ class SpeechQueue:
         self.text_q = queue.Queue()
         self.turn_start = None
         self.first_audio_at = None
+        self.epoch = 0  # bumped by cancel(); audio from older epochs is dropped
         ready, error = threading.Event(), []
         threading.Thread(target=self._synth_worker, args=(make_speaker, ready, error),
                          daemon=True).start()
@@ -684,6 +722,17 @@ class SpeechQueue:
         if text:
             self.text_q.put(text)
 
+    def cancel(self):
+        """Stop speaking now: drop queued text and unplayed audio."""
+        self.epoch += 1
+        while True:
+            try:
+                self.text_q.get_nowait()
+            except queue.Empty:
+                break
+            self.text_q.task_done()
+        self.player.clear()
+
     def wait(self):
         self.text_q.join()
         self.player.flush()
@@ -701,8 +750,14 @@ class SpeechQueue:
             ready.set()
         while True:
             text = self.text_q.get()
+            epoch = self.epoch
+
+            def write(pcm, epoch=epoch):
+                if self.epoch == epoch:
+                    self.player.write(pcm)
+
             try:
-                self.speaker.stream(text, self.player.write)
+                self.speaker.stream(text, write)
             except Exception as e:  # keep the session alive on a TTS error
                 print(ui(f"\nErreur TTS : {e}", f"\nTTS error: {e}"))
             finally:
@@ -864,6 +919,20 @@ class Tutor:
                 "peak_gb": last.peak_memory,
             }
         return out
+
+    def oneshot(self, system, user, max_tokens=300):
+        """A side request that never touches the tutor history or its prefix
+        cache (used for translations and vocabulary). Gemma's sliding-window
+        cache cannot be rolled back, so these must not use self.cache."""
+        prompt = self._template([{"role": "system", "content": system},
+                                 {"role": "user", "content": user}])
+        out = ""
+        for r in stream_generate(self.model, self.processor, prompt, max_tokens=max_tokens,
+                                 temperature=0.0):
+            out += r.text
+            if any(s in out for s in STOP_STRINGS):
+                break
+        return strip_stops(out)
 
     def seed_greeting(self, greeting):
         # Gemma templates expect the first turn to come from the user.
