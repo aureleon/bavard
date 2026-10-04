@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { session } from "../lib/session.svelte";
-  import Orb from "./Orb.svelte";
+  import SphereWave from "./SphereWave.svelte";
 
   const t = $derived(session.t);
   let now = $state(performance.now());
@@ -40,7 +40,7 @@
 
 <div class="flex h-full flex-col items-center px-6 pt-4 pb-5">
   <div class="relative min-h-0 w-full flex-1">
-    <Orb state={session.phase === "ready" ? session.state : "loading"} mic={session.mic} />
+    <SphereWave state={session.phase === "ready" ? session.state : "loading"} mic={session.mic} />
   </div>
 
   <p class="mb-4 text-[11px] font-semibold tracking-[0.25em] text-white/55">{label}</p>
