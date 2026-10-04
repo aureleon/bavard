@@ -24,7 +24,7 @@ export const levels = {
   out: { rms: 0, bands: new Array(8).fill(0) as number[], at: 0 },
 };
 
-/** Peak memory measured on an M4 Pro (VOICE_APP_SPEC.md §4.7). Same table as
+/** Peak memory measured on an M4 Pro (README, "Memory and speed"). Same table as
  * memory_estimate_gb() in serve.py. */
 export function memoryEstimate(s: Pick<Settings, "stt" | "turn" | "tts">): number {
   const kyutaiStt = s.stt === "kyutai" || s.turn === "semantic";

@@ -205,7 +205,7 @@ Keep the default `--kyutai-bits 8`. In bf16 (`--kyutai-bits 0`), Kyutai is ~3× 
 
 ## Desktop app (`app/`)
 
-A native macOS app (Tauri v2 + Svelte 5) wraps the same engine. It has a native title bar (traffic lights, **Conversation** / **Prompts** pills, settings gear) over two panes: a spherical audio-wave visualizer with push-to-talk on the left, and the live transcript with corrections on the right. See [VOICE_APP_SPEC.md](VOICE_APP_SPEC.md) for the design.
+A native macOS app (Tauri v2 + Svelte 5) wraps the same engine. It has a native title bar (traffic lights, **Conversation** / **Prompts** pills, settings gear) over two panes: a spherical audio-wave visualizer with push-to-talk on the left, and the live transcript with corrections on the right. The original design spec is `VOICE_APP_SPEC.md` in the first commit of the `native-app` branch.
 
 The app runs `serve.py`, a sidecar that speaks JSON lines on stdin/stdout (the protocol is in its docstring). The Rust shell starts the sidecar, sends it commands, and kills its process group on `Cmd + Q`, so all model memory goes back to macOS at once.
 
