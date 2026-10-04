@@ -161,7 +161,7 @@
       {#if session.view === "chat"}
         <!-- Top row of the transcript: optional headphone warning, then the Shift hint -->
         <div class="flex shrink-0 items-start gap-3 px-4 pt-3 pl-6">
-          {#if session.mode !== "ptt" && session.config && !session.config.headphones_likely}
+          {#if session.mode !== "ptt" && session.config && !session.config.headphones_likely && !session.config.echo_cancel}
             <p class="min-w-0 flex-1 rounded-md bg-amber-400/10 px-3 py-1.5 text-[11px] leading-snug text-amber-200">
               {t.settings.headphones}
             </p>

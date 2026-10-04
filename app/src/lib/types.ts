@@ -25,6 +25,10 @@ export interface EngineConfig {
   max_audio_s: number;
   output_device: string;
   headphones_likely: boolean;
+  /** WebRTC echo cancellation is running. */
+  echo_cancel: boolean;
+  /** Hands-free: talking over the tutor stops it. */
+  barge_in: boolean;
   prompts: { tutor: string; hear: string };
   tuning: Tuning;
   supports_audio: boolean;
@@ -62,6 +66,8 @@ export interface Settings {
   ui_lang: "fr" | "en";
   prefetch: boolean;
   greet: boolean;
+  echo: "auto" | "on" | "off";
+  barge_in: boolean;
   dev: DevSettings;
 }
 
@@ -123,6 +129,7 @@ export type EngineEvent =
   | { event: "prompts_reloaded"; seconds: number }
   | ({ event: "tuning" } & Tuning)
   | { event: "voice"; paused: boolean }
+  | { event: "mic"; on: boolean }
   | { event: "listening"; enabled: boolean; window_hidden: boolean }
   | { event: "prompt_translation"; name: PromptName; req: number | null; text: string; done: boolean; missing?: string[] }
   | { event: "error"; message: string }

@@ -15,6 +15,8 @@
     a.tts !== b.tts ||
     a.silence !== b.silence ||
     a.prefetch !== b.prefetch ||
+    a.echo !== b.echo ||
+    a.barge_in !== b.barge_in ||
     a.dev.model !== b.dev.model ||
     a.dev.whisper_model !== b.dev.whisper_model ||
     a.dev.kyutai_bits !== b.dev.kyutai_bits ||
@@ -26,7 +28,21 @@
   // macOS recommends on this Mac (Metal recommendedMaxWorkingSetSize).
   const over = (patch: Partial<Settings>) => !session.fits({ ...draft, ...patch });
   const budget = $derived(session.budgetGb);
-  const headphonesWarn = $derived(draft.turn !== "ptt" && !session.config?.headphones_likely);
+  // Speakers and no echo cancellation: the tutor's voice can start a turn.
+  const echoOn = $derived(
+    draft.echo === "on" ||
+      (draft.echo === "auto" && !session.config?.headphones_likely) ||
+      false,
+  );
+  const echoMissing = $derived(
+    echoOn && draft.echo === session.settings?.echo && session.config !== null && !session.config.echo_cancel,
+  );
+  const headphonesWarn = $derived(
+    draft.turn !== "ptt" && !session.config?.headphones_likely && (!echoOn || echoMissing),
+  );
+  const echoStatus = $derived(
+    echoMissing ? s.echoMissing : echoOn ? s.echoActive : session.config?.headphones_likely ? s.echoHeadphones : s.echoOff,
+  );
 
   function change(patch: Partial<Settings>) {
     draft = { ...draft, ...patch };
@@ -84,6 +100,34 @@
         {/if}
         {#if headphonesWarn}
           <p class="mt-2 rounded-md bg-amber-400/10 px-2.5 py-1.5 text-[11px] leading-snug text-amber-200">{s.headphones}</p>
+        {/if}
+      </section>
+
+      <section>
+        <h3 class="mb-1.5 text-[11px] font-semibold tracking-wider text-white/45 uppercase">{s.echo}</h3>
+        {@render seg(
+          draft.echo,
+          [
+            ["auto", s.echoAuto],
+            ["on", s.echoOnLabel],
+            ["off", s.echoOffLabel],
+          ],
+          (v) => change({ echo: v as Settings["echo"] }),
+        )}
+        <p class="mt-1.5 text-[11px] leading-snug text-white/45">{echoStatus}</p>
+        {#if draft.turn !== "ptt"}
+          <label class="mt-2 flex items-start gap-2 text-[12px] text-white/75">
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              checked={draft.barge_in}
+              onchange={(e) => change({ barge_in: e.currentTarget.checked })}
+            />
+            <span>
+              {s.bargeIn}
+              <span class="block text-[11px] text-white/45">{echoOn || session.config?.headphones_likely ? s.bargeInHelp : s.bargeInNeeds}</span>
+            </span>
+          </label>
         {/if}
       </section>
 

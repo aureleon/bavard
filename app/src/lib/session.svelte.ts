@@ -244,6 +244,9 @@ export class Session {
       case "mode":
         this.mode = e.mode;
         break;
+      case "mic":
+        this.mic = e.on;
+        break;
       case "voice":
         this.voicePaused = e.paused;
         break;

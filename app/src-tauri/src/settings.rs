@@ -22,6 +22,11 @@ pub struct Settings {
     pub prefetch: bool,
     /// Speak the greeting when the engine is ready.
     pub greet: bool,
+    /// Echo cancellation: auto (on unless headphones are likely), on, off.
+    pub echo: String,
+    /// Hands-free modes: talking over the tutor stops it (needs echo
+    /// cancellation or headphones).
+    pub barge_in: bool,
     /// Developer options: model choice and tuning.
     pub dev: DevSettings,
 }
@@ -105,6 +110,8 @@ impl Default for Settings {
             ui_lang: "fr".into(),
             prefetch: true,
             greet: true,
+            echo: "auto".into(),
+            barge_in: true,
             dev: DevSettings::default(),
         }
     }
@@ -140,6 +147,9 @@ impl Settings {
         if !["kokoro", "kyutai"].contains(&self.tts.as_str()) {
             self.tts = d.tts.clone();
         }
+        if !["auto", "on", "off"].contains(&self.echo.as_str()) {
+            self.echo = d.echo.clone();
+        }
         if !["fr", "en"].contains(&self.ui_lang.as_str()) {
             self.ui_lang = d.ui_lang.clone();
         }
@@ -156,6 +166,8 @@ impl Settings {
             || self.tts != other.tts
             || self.silence != other.silence
             || self.prefetch != other.prefetch
+            || self.echo != other.echo
+            || self.barge_in != other.barge_in
             || self.dev.model != other.dev.model
             || self.dev.whisper_model != other.dev.whisper_model
             || self.dev.kyutai_bits != other.dev.kyutai_bits
@@ -175,7 +187,12 @@ impl Settings {
             format!("{:.2}", self.speed),
             "--silence".into(),
             format!("{:.2}", self.silence),
+            "--aec".into(),
+            self.echo.clone(),
         ];
+        if !self.barge_in {
+            args.push("--no-barge-in".into());
+        }
         let d = &self.dev;
         for (flag, value) in [
             ("--model", d.model.clone()),
@@ -252,5 +269,18 @@ mod tests {
         let args = s.sanitized().engine_args();
         assert!(args.windows(2).any(|w| w[0] == "--model" && w[1] == "gemma-e4b"));
         assert!(!args.contains(&"--temperature".to_string()));
+        assert!(args.windows(2).any(|w| w[0] == "--aec" && w[1] == "auto"));
+        assert!(!args.contains(&"--no-barge-in".to_string()));
+    }
+
+    #[test]
+    fn echo_settings() {
+        let s = Settings { echo: "loud".into(), ..Default::default() }.sanitized();
+        assert_eq!(s.echo, "auto");
+        let off = Settings { echo: "off".into(), barge_in: false, ..Default::default() };
+        assert!(Settings::default().needs_restart(&off));
+        let args = off.engine_args();
+        assert!(args.windows(2).any(|w| w[0] == "--aec" && w[1] == "off"));
+        assert!(args.contains(&"--no-barge-in".to_string()));
     }
 }

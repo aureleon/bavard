@@ -47,6 +47,8 @@ export function mockBridge(): Bridge {
     ui_lang: "fr",
     prefetch: true,
     greet: true,
+    echo: "auto",
+    barge_in: true,
     dev: {
       model: "gemma-e4b",
       max_context: 16384,
@@ -118,6 +120,8 @@ export function mockBridge(): Bridge {
         max_audio_s: 30,
         output_device: "MacBook Pro Speakers",
         headphones_likely: false,
+        echo_cancel: settings.echo !== "off",
+        barge_in: settings.barge_in,
         prompts: { tutor: "prompts/tutor.txt", hear: "prompts/hear.txt" },
         tuning: { temperature: 1, top_p: 0.95, top_k: 64, max_tokens: 220, max_context: 16384, eot_threshold: 0.5 },
         supports_audio: true,
