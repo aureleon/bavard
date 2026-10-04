@@ -93,6 +93,10 @@ chmod +x run.sh
 
 Dependencies and model weights download automatically on first run. `run.sh` reinstalls dependencies when `requirements.txt` changes.
 
+By default, model loading is silent: Bavard only prints `Chargement...` until the tutor is ready. Use `--verbose` (`-v`) to see each model load, plus Hugging Face download progress bars and warnings. This is useful to follow the first download: `./run.sh --verbose`.
+
+The program text (menus, prompts, status messages) is in French. Use `--en` to show it in English. The tutor still speaks and corrects in French.
+
 ### Controls
 
 Push-to-talk mode (`--turn ptt`):

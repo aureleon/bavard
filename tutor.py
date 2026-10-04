@@ -116,13 +116,42 @@ def load_prompt(path, kind):
         with open(path, encoding="utf-8") as f:
             text = f.read().strip()
     except OSError as e:
-        sys.exit(f"❌ Impossible de lire le prompt {kind} ({path}) : {e}")
+        sys.exit(ui(f"Impossible de lire le prompt {kind} ({path}) : {e}",
+                    f"Cannot read the {kind} prompt ({path}): {e}"))
     if not text:
-        sys.exit(f"❌ Le prompt {kind} est vide : {path}")
+        sys.exit(ui(f"Le prompt {kind} est vide : {path}", f"The {kind} prompt is empty: {path}"))
     missing = [m for m in REQUIRED_MARKERS[kind] if m.lower() not in text.lower()]
     if missing:
-        print(f"⚠️  {path} ne mentionne pas {', '.join(missing)} : le format de sortie risque de ne plus être reconnu.")
+        print(ui(f"{path} ne mentionne pas {', '.join(missing)} : le format de sortie risque de ne plus être reconnu.",
+                 f"{path} does not mention {', '.join(missing)}: the output format may no longer be recognized."))
     return text
+
+
+VERBOSE = False  # set by --verbose: show model loading and Hugging Face output
+ENGLISH = False  # set by --en: program text in English (the tutor still speaks French)
+
+
+def ui(fr, en):
+    """Pick the French or English version of a program message (--en)."""
+    return en if ENGLISH else fr
+
+
+def log(*args, **kwargs):
+    """print() that only runs with --verbose (model loading details)."""
+    if VERBOSE:
+        print(*args, **kwargs)
+
+
+def quiet_hugging_face():
+    """Hide Hugging Face progress bars ("Fetching N files") and warnings,
+    such as the unauthenticated-requests notice. --verbose shows them, for
+    example to follow a first-run download."""
+    if VERBOSE:
+        return
+    from huggingface_hub.utils import disable_progress_bars, logging as hf_logging
+
+    disable_progress_bars()
+    hf_logging.set_verbosity_error()
 
 
 GREETING = "Bonjour ! Comment vas-tu aujourd'hui ?"
@@ -195,11 +224,11 @@ class KyutaiListener:
             import sentencepiece
             from moshi_mlx import models, utils
         except ImportError:
-            sys.exit(f"❌ Kyutai STT needs moshi_mlx. {MOSHI_INSTALL_HINT}")
+            sys.exit(f"Kyutai STT needs moshi_mlx. {MOSHI_INSTALL_HINT}")
         from huggingface_hub import hf_hub_download
 
         label = f"q{self.quantize_bits}" if self.quantize_bits else "bf16"
-        print(f"👂 Initialisation de Kyutai STT 1B ({label} MLX)...")
+        log(ui(f"Initialisation de Kyutai STT 1B ({label} MLX)...", f"Loading Kyutai STT 1B ({label} MLX)..."))
         raw = json.load(open(hf_hub_download(self.REPO, "config.json")))
         mimi_weights = hf_hub_download(self.REPO, raw["mimi_name"])
         moshi_weights = hf_hub_download(self.REPO, raw.get("moshi_name", "model.safetensors"))
@@ -224,7 +253,7 @@ class KyutaiListener:
         model.warmup()
         self._begin()
         self._step(np.zeros(self.BLOCK, dtype=np.float32))  # compile the step
-        print(f"✅ Kyutai STT {label} prêt !\n")
+        log(ui(f"Kyutai STT {label} prêt !\n", f"Kyutai STT {label} ready.\n"))
 
     def _begin(self):
         for c in self.model.transformer_cache:
@@ -252,7 +281,7 @@ class KyutaiListener:
             self.pieces.append(piece)
             if self.live:
                 if not self.printed:
-                    print("📝 ", end="")
+                    print("> ", end="")
                     self.printed = True
                 print(piece, end="", flush=True)
         # End of turn: only after some words were heard. Before the learner
@@ -290,7 +319,7 @@ class KyutaiListener:
                     print()
                     self.printed = False
             except Exception as e:
-                print(f"\n⚠️  Erreur Kyutai STT : {e}")
+                print(ui(f"\nErreur Kyutai STT : {e}", f"\nKyutai STT error: {e}"))
             finally:
                 if cmd == "finish":
                     arg[0].set()
@@ -324,7 +353,8 @@ class PushToTalkRecorder:
                                 callback=self._callback)
         stream.start()
         try:
-            input("🎤  [Enregistrement...] Appuie sur [Entrée] pour terminer.\n")
+            input(ui("[Enregistrement...] Appuie sur [Entrée] pour terminer.\n",
+                     "[Recording...] Press [Enter] to stop.\n"))
         finally:
             self.is_recording = False
             stream.stop()
@@ -395,7 +425,8 @@ class VadRecorder:
 
         with sd.InputStream(samplerate=self.rate, channels=1, dtype="float32",
                             blocksize=self.frame, callback=callback):
-            print("👂 J'écoute... (parle quand tu veux, Ctrl+C pour le menu)")
+            print(ui("J'écoute... (parle quand tu veux, Ctrl+C pour le menu)",
+                     "Listening... (speak whenever you like, Ctrl+C for the menu)"))
             while True:
                 buf = np.concatenate([buf, frames_q.get()])
                 while len(buf) >= self.frame:
@@ -412,7 +443,7 @@ class VadRecorder:
                             if self.listener:
                                 self.listener.begin()
                                 self.listener.feed(np.concatenate(speech))
-                            print("🎤  [Parole détectée...]")
+                            print(ui("[Parole détectée...]", "[Speech detected...]"))
                         continue
 
                     speech.append(frame)
@@ -425,7 +456,7 @@ class VadRecorder:
                         silent_run += 1
 
                     if len(speech) >= self.max_frames:
-                        print(f"⏱️  Limite de {MAX_AUDIO_SECONDS}s atteinte.")
+                        print(ui(f"Limite de {MAX_AUDIO_SECONDS}s atteinte.", f"{MAX_AUDIO_SECONDS} s limit reached."))
                         return done(speech)
                     if self.semantic and self.listener.end_of_turn.is_set() and voiced >= self.min_speech_frames:
                         return done(speech)
@@ -456,9 +487,9 @@ class KokoroSpeaker:
 
         self.voice = voice
         self.speed = speed
-        print("🎙️  Initialisation de Kokoro-82M...")
+        log(ui("Initialisation de Kokoro-82M...", "Loading Kokoro-82M..."))
         self.pipeline = KPipeline(lang_code="f", repo_id="hexgrad/Kokoro-82M")
-        print("✅ Voix Kokoro prête !\n")
+        log(ui("Voix Kokoro prête !\n", "Kokoro voice ready.\n"))
 
     def set_speed(self, new_speed):
         self.speed = max(0.5, min(1.6, round(new_speed, 2)))
@@ -480,11 +511,12 @@ class KyutaiSpeaker:
             import sentencepiece
             from moshi_mlx import models
         except ImportError:
-            sys.exit(f"❌ Kyutai TTS needs moshi_mlx. {MOSHI_INSTALL_HINT}")
+            sys.exit(f"Kyutai TTS needs moshi_mlx. {MOSHI_INSTALL_HINT}")
         from moshi_mlx.models.tts import TTSModel, DEFAULT_DSM_TTS_REPO, DEFAULT_DSM_TTS_VOICE_REPO
         from moshi_mlx.utils.loaders import hf_get
 
-        print(f"🎙️  Initialisation de Kyutai TTS 1.6B ({quantize_bits}-bit MLX)...")
+        log(ui(f"Initialisation de Kyutai TTS 1.6B ({quantize_bits}-bit MLX)...",
+               f"Loading Kyutai TTS 1.6B ({quantize_bits}-bit MLX)..."))
         raw_config = json.load(open(hf_get("config.json", DEFAULT_DSM_TTS_REPO)))
         mimi_weights = hf_get(raw_config["mimi_name"], DEFAULT_DSM_TTS_REPO)
         moshi_weights = hf_get(raw_config["moshi_name"], DEFAULT_DSM_TTS_REPO)
@@ -497,7 +529,7 @@ class KyutaiSpeaker:
         model.load_pytorch_weights(str(moshi_weights), lm_config, strict=True)
 
         if quantize_bits:
-            print(f"⚡ Quantification MLX en {quantize_bits}-bit...")
+            log(ui(f"Quantification MLX en {quantize_bits}-bit...", f"Quantizing to {quantize_bits}-bit MLX..."))
             nn.quantize(model.depformer, bits=quantize_bits)
             for layer in model.transformer.layers:
                 nn.quantize(layer.self_attn, bits=quantize_bits)
@@ -520,7 +552,8 @@ class KyutaiSpeaker:
         self.speed = 1.0
         self.frame_streaming = frame_streaming
         self.sample_rate = self.tts_model.mimi.sample_rate
-        print(f"✅ Kyutai TTS {'q' + str(quantize_bits) if quantize_bits else 'bf16'} prêt !\n")
+        tts_label = f"q{quantize_bits}" if quantize_bits else "bf16"
+        log(ui(f"Kyutai TTS {tts_label} prêt !\n", f"Kyutai TTS {tts_label} ready.\n"))
 
     def set_speed(self, new_speed):
         self.speed = max(0.5, min(1.6, round(new_speed, 2)))
@@ -671,7 +704,7 @@ class SpeechQueue:
             try:
                 self.speaker.stream(text, self.player.write)
             except Exception as e:  # keep the session alive on a TTS error
-                print(f"\n⚠️  Erreur TTS : {e}")
+                print(ui(f"\nErreur TTS : {e}", f"\nTTS error: {e}"))
             finally:
                 if self.text_q.unfinished_tasks == 1:
                     self.player.flush()  # nothing else queued: play what we have
@@ -726,7 +759,8 @@ class Tutor:
     def __init__(self, model_repo, max_context, temperature=None, tutor_prompt="", hear_prompt=""):
         self.tutor_prompt = tutor_prompt
         self.hear_prompt = hear_prompt
-        print(f"🧠 Chargement du modèle {model_repo.split('/')[-1]}...")
+        name = model_repo.split("/")[-1]
+        log(ui(f"Chargement du modèle {name}...", f"Loading model {name}..."))
         self.model, self.processor = load(model_repo)
         self.tokenizer = getattr(self.processor, "tokenizer", self.processor)
         cfg = self.model.config
@@ -741,7 +775,7 @@ class Tutor:
         self.history = []  # text-only chat history (no system message)
         self.merge_system = False
         self.last_stats = None
-        print("✅ Modèle LLM prêt !\n")
+        log(ui("Modèle LLM prêt !\n", "LLM ready.\n"))
 
     # -- prompt building ---------------------------------------------------
     def _template(self, messages, num_audios=0, add_generation_prompt=True):
@@ -922,17 +956,21 @@ class ReplyStreamer:
 # Main loop
 # ---------------------------------------------------------------------------
 
+class QuitRequested(Exception):
+    """The learner typed q / quit / exit."""
+
+
 def handle_command(cmd, speech, tutor, last_reply):
     """Returns True if `cmd` was a command (and was handled)."""
     speaker = speech.speaker
     if cmd == "+":
         speaker.set_speed(speaker.speed + 0.05)
-        print(f"⚡ Vitesse augmentée à {speaker.speed:.2f}x\n")
+        print(ui(f"Vitesse augmentée à {speaker.speed:.2f}x\n", f"Speed up to {speaker.speed:.2f}x\n"))
     elif cmd == "-":
         speaker.set_speed(speaker.speed - 0.05)
-        print(f"🐢 Vitesse ralentie à {speaker.speed:.2f}x\n")
+        print(ui(f"Vitesse ralentie à {speaker.speed:.2f}x\n", f"Speed down to {speaker.speed:.2f}x\n"))
     elif cmd in ("r", "repeat", "repeter", "replay"):
-        print(f"🔁 Répétition : \"{last_reply}\"")
+        print(ui(f"Répétition : \"{last_reply}\"", f"Repeating: \"{last_reply}\""))
         speech.begin_turn(None)
         for chunk in re.split(r"(?<=[.!?…])\s+", last_reply):
             speech.say(chunk)
@@ -940,16 +978,21 @@ def handle_command(cmd, speech, tutor, last_reply):
         print()
     elif cmd in ("tokens", "stats", "status"):
         turns = sum(1 for m in tutor.history if m["role"] == "user")
-        print(f"📊 Contexte: {tutor.context_tokens():,} / {tutor.max_context:,} tokens ({turns} tours)")
+        used = f"{tutor.context_tokens():,} / {tutor.max_context:,} tokens"
+        plural = "s" if turns != 1 else ""
+        print(ui(f"Contexte: {used} ({turns} tour{plural})", f"Context: {used} ({turns} turn{plural})"))
         s = tutor.last_stats
         if s:
-            print(f"   Dernier tour: TTFT {s['ttft']:.2f}s, {s['cached_tokens']}/{s['prompt_tokens']} tokens en cache, "
-                  f"{s['tg_tps']:.1f} tok/s, pic mémoire {s['peak_gb']:.2f} GB")
+            cached = f"{s['cached_tokens']}/{s['prompt_tokens']}"
+            print(ui(f"   Dernier tour: TTFT {s['ttft']:.2f}s, {cached} tokens en cache, "
+                     f"{s['tg_tps']:.1f} tok/s, pic mémoire {s['peak_gb']:.2f} GB",
+                     f"   Last turn: TTFT {s['ttft']:.2f}s, {cached} tokens cached, "
+                     f"{s['tg_tps']:.1f} tok/s, peak memory {s['peak_gb']:.2f} GB"))
         print()
     else:
         try:
             speaker.set_speed(float(cmd.replace(",", ".")))
-            print(f"🎯 Vitesse réglée à {speaker.speed:.2f}x\n")
+            print(ui(f"Vitesse réglée à {speaker.speed:.2f}x\n", f"Speed set to {speaker.speed:.2f}x\n"))
         except ValueError:
             return False
     return True
@@ -991,41 +1034,58 @@ def main():
                         help="Mode audio : fichier du prompt de transcription (défaut: prompts/hear.txt)")
     parser.add_argument("--whisper-model", default="mlx-community/whisper-base-mlx",
                         help="--stt whisper : modèle MLX Whisper (défaut: whisper-base-mlx)")
+    parser.add_argument("--en", action="store_true",
+                        help="Program text in English (the tutor still speaks French)")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Afficher le chargement des modèles et les messages Hugging Face")
     args = parser.parse_args()
+    global VERBOSE, ENGLISH
+    VERBOSE = args.verbose
+    ENGLISH = args.en
 
     model_repo = MODEL_ALIASES.get(args.model.lower(), args.model)
 
     print("\n" + "=" * 60)
-    print("🇫🇷  BAVARD - TUTEUR DE FRANÇAIS (Apple Silicon MLX)")
+    print(ui("BAVARD - TUTEUR DE FRANÇAIS (Apple Silicon MLX)", "BAVARD - FRENCH TUTOR (Apple Silicon MLX)"))
     print("=" * 60)
     print(f"• LLM:      {model_repo}")
     stt_label = f"q{args.kyutai_stt_bits}" if args.kyutai_stt_bits else "bf16"
-    print("• Écoute:   " + {"audio": "Gemma audio natif", "whisper": f"Whisper {args.whisper_model}",
-                            "kyutai": f"Kyutai STT 1B {stt_label} (streaming)"}[args.stt])
-    print("• Tour:     " + {"ptt": "Push-to-talk (Entrée)",
-                            "vad": f"Mains libres (Silero VAD, silence {args.silence}s)",
-                            "semantic": f"Mains libres (fin de phrase Kyutai STT {stt_label})"}[args.turn])
+    print(ui("• Écoute:   ", "• STT:      ") + {
+        "audio": ui("Gemma audio natif", "Gemma native audio"),
+        "whisper": f"Whisper {args.whisper_model}",
+        "kyutai": f"Kyutai STT 1B {stt_label} (streaming)"}[args.stt])
+    print(ui("• Tour:     ", "• Turn:     ") + {
+        "ptt": ui("Push-to-talk (Entrée)", "Push-to-talk (Enter)"),
+        "vad": ui(f"Mains libres (Silero VAD, silence {args.silence}s)",
+                  f"Hands-free (Silero VAD, {args.silence} s silence)"),
+        "semantic": ui(f"Mains libres (fin de phrase Kyutai STT {stt_label})",
+                       f"Hands-free (Kyutai STT {stt_label} end of sentence)")}[args.turn])
     kyutai_label = f"q{args.kyutai_bits}" if args.kyutai_bits else "bf16"
     print(f"• TTS:      {'Kyutai 1.6B ' + kyutai_label if args.tts == 'kyutai' else 'Kokoro-82M (streaming)'}")
-    print(f"• Contexte: {args.max_context:,} tokens")
+    print(ui("• Contexte: ", "• Context:  ") + f"{args.max_context:,} tokens")
     def show(path):
         rel = os.path.relpath(path)
         return path if rel.startswith("..") else rel
     print(f"• Prompts:  {show(args.tutor_prompt)}" + (f", {show(args.hear_prompt)}" if args.stt == "audio" else ""))
     print("=" * 60 + "\n")
+    if not VERBOSE:
+        # Loading is silent without --verbose, so say so before the wait.
+        print(ui("Chargement...", "Loading..."), flush=True)
 
     tutor_prompt = load_prompt(args.tutor_prompt, "tutor")
     hear_prompt = load_prompt(args.hear_prompt, "hear") if args.stt == "audio" else ""
+    quiet_hugging_face()
     tutor = Tutor(model_repo, args.max_context, args.temperature, tutor_prompt, hear_prompt)
     if args.stt == "audio" and not tutor.supports_audio:
-        sys.exit(f"❌ {model_repo} n'accepte pas l'audio. Utilise --stt whisper, --stt kyutai ou un modèle Gemma 4.")
+        sys.exit(ui(f"{model_repo} n'accepte pas l'audio. Utilise --stt whisper, --stt kyutai ou un modèle Gemma 4.",
+                    f"{model_repo} does not accept audio. Use --stt whisper, --stt kyutai or a Gemma 4 model."))
 
     if args.stt == "whisper":
         import mlx_whisper
-        print(f"⚡ Chargement de Whisper ({args.whisper_model})...")
+        log(ui(f"Chargement de Whisper ({args.whisper_model})...", f"Loading Whisper ({args.whisper_model})..."))
         mlx_whisper.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32),
                                path_or_hf_repo=args.whisper_model, language="fr")
-        print("✅ Whisper prêt !\n")
+        log(ui("Whisper prêt !\n", "Whisper ready.\n"))
 
     if args.tts == "kyutai":
         voice = "cml-tts/fr/10087_11650_000028-0002.wav" if args.voice == "default" else args.voice
@@ -1041,7 +1101,7 @@ def main():
     except SystemExit:
         raise
     except Exception as e:
-        sys.exit(f"❌ Impossible de charger le TTS : {e}")
+        sys.exit(ui(f"Impossible de charger le TTS : {e}", f"Cannot load the TTS: {e}"))
     speaker = speech.speaker
 
     listener = None
@@ -1051,40 +1111,47 @@ def main():
         except SystemExit:
             raise
         except Exception as e:
-            sys.exit(f"❌ Impossible de charger Kyutai STT : {e}")
+            sys.exit(ui(f"Impossible de charger Kyutai STT : {e}", f"Cannot load Kyutai STT: {e}"))
 
     if args.turn in ("vad", "semantic"):
-        print("🔈 Chargement de Silero VAD...")
+        log(ui("Chargement de Silero VAD...", "Loading Silero VAD..."))
         recorder = VadRecorder(silence_s=args.silence, listener=listener, semantic=args.turn == "semantic")
-        print("✅ VAD prêt ! (utilise un casque pour éviter l'écho)\n")
+        log(ui("VAD prêt ! (utilise un casque pour éviter l'écho)\n", "VAD ready. (use headphones to avoid echo)\n"))
     else:
         recorder = PushToTalkRecorder(listener=listener)
 
     tutor.seed_greeting(GREETING)
-    print("🔥 Préchauffage...")
+    log(ui("Préchauffage...", "Warming up..."))
     tutor.warm_up(audio=args.stt == "audio")
     last_reply = GREETING
-    print(f"🇫🇷 Tuteur: {GREETING}\n")
+    print(ui("Tuteur: ", "Tutor: ") + f"{GREETING}\n")
     speech.say(GREETING)
     speech.wait()
 
-    print("💡 Commandes :")
+    print(ui("Commandes :", "Commands:"))
     if args.turn == "ptt":
-        print("   • [Entrée]    : Parler (puis Entrée pour terminer)")
+        print(ui("   • [Entrée]    : Parler (puis Entrée pour terminer)",
+                 "   • [Enter]     : Speak (then Enter to stop)"))
     else:
-        print("   • Parle simplement ; Ctrl+C ouvre le menu (Entrée pour reprendre)")
-    print("   • [+] ou [-]  : Accélérer ou ralentir la voix (ou un nombre, ex. 0.8)")
-    print("   • [r]         : Répéter la dernière réponse")
-    print("   • [stats]     : Contexte, cache et vitesse")
-    print("   • [q] / Ctrl+C: Quitter\n")
+        print(ui("   • Parle simplement ; Ctrl+C ouvre le menu (Entrée pour reprendre)",
+                 "   • Just speak; Ctrl+C opens the menu (Enter to resume)"))
+    print(ui("   • [+] ou [-]  : Accélérer ou ralentir la voix (ou un nombre, ex. 0.8)",
+             "   • [+] or [-]  : Speed up or slow down the voice (or a number, e.g. 0.8)"))
+    print(ui("   • [r]         : Répéter la dernière réponse",
+             "   • [r]         : Repeat the last reply"))
+    print(ui("   • [stats]     : Contexte, cache et vitesse",
+             "   • [stats]     : Context, cache and speed"))
+    print(ui("   • [q] / Ctrl+C: Quitter\n",
+             "   • [q] / Ctrl+C: Quit\n"))
 
     while True:
         try:
             # ---- 1. capture -------------------------------------------------
             if args.turn == "ptt":
-                cmd = input(f"👉 [Entrée] Parler | [+]/[-] Vitesse | [r] Répéter ({speaker.speed:.2f}x) : ").strip().lower()
+                cmd = input(ui(f"[Entrée] Parler | [+]/[-] Vitesse | [r] Répéter ({speaker.speed:.2f}x) : ",
+                               f"[Enter] Speak | [+]/[-] Speed | [r] Repeat ({speaker.speed:.2f}x): ")).strip().lower()
                 if cmd in ("q", "quit", "exit"):
-                    raise KeyboardInterrupt
+                    raise QuitRequested
                 if cmd and handle_command(cmd, speech, tutor, last_reply):
                     continue
                 audio = recorder.record()
@@ -1092,9 +1159,10 @@ def main():
                 try:
                     audio = recorder.record()
                 except KeyboardInterrupt:
-                    cmd = input(f"\n⏸️  Pause. [Entrée] Reprendre | [+]/[-] | [r] | [stats] | [q] Quitter ({speaker.speed:.2f}x) : ").strip().lower()
+                    cmd = input(ui(f"\nPause. [Entrée] Reprendre | [+]/[-] | [r] | [stats] | [q] Quitter ({speaker.speed:.2f}x) : ",
+                                   f"\nPaused. [Enter] Resume | [+]/[-] | [r] | [stats] | [q] Quit ({speaker.speed:.2f}x): ")).strip().lower()
                     if cmd in ("q", "quit", "exit"):
-                        raise KeyboardInterrupt
+                        raise QuitRequested
                     if cmd:
                         handle_command(cmd, speech, tutor, last_reply)
                     continue
@@ -1104,10 +1172,10 @@ def main():
             if duration < 0.5 or np.max(np.abs(audio)) < 0.01:
                 if listener:
                     listener.finish(flush=False)
-                print("⚠️  Enregistrement trop court ou silencieux. Réessaie !")
+                print(ui("Enregistrement trop court ou silencieux. Réessaie !", "Recording too short or silent. Try again."))
                 continue
             if duration > MAX_AUDIO_SECONDS:
-                print(f"✂️  Audio coupé à {MAX_AUDIO_SECONDS}s.")
+                print(ui(f"Audio coupé à {MAX_AUDIO_SECONDS}s.", f"Audio cut at {MAX_AUDIO_SECONDS} s."))
                 audio = audio[: SAMPLE_RATE * MAX_AUDIO_SECONDS]
 
             # ---- 2. hear ----------------------------------------------------
@@ -1115,10 +1183,10 @@ def main():
             if listener and args.stt != "kyutai":
                 listener.finish(flush=False)  # end the live transcript line
             if args.stt == "audio":
-                print("👂 Écoute (Gemma audio)...")
+                print(ui("Écoute (Gemma audio)...", "Listening (Gemma audio)..."))
                 transcript, pron = tutor.hear(audio)
             elif args.stt == "whisper":
-                print("⚡ Transcription (Whisper)...")
+                print(ui("Transcription (Whisper)...", "Transcribing (Whisper)..."))
                 transcript = mlx_whisper.transcribe(audio, path_or_hf_repo=args.whisper_model,
                                                     language="fr").get("text", "").strip()
             else:
@@ -1126,18 +1194,18 @@ def main():
             t_heard = time.time()
 
             if not transcript or "(inaudible)" in transcript.lower():
-                print("⚠️  Rien compris. Réessaie !")
+                print(ui("Rien compris. Réessaie !", "Nothing understood. Try again."))
                 continue
 
-            print(f"\n👤 Toi:    {transcript}")
+            print(ui("\nToi: ", "\nYou: ") + transcript)
             if pron:
-                print(f"🗣️  Prononciation: {pron}")
+                print(ui("Prononciation: ", "Pronunciation: ") + pron)
             user_content = f"TRANSCRIPTION: {transcript}"
             if pron:
                 user_content += f"\nPRONONCIATION: {pron}"
 
             # ---- 3. tutor + 4. streaming speech ----------------------------
-            print("🇫🇷 Tuteur:\n", end="")
+            print(ui("Tuteur:", "Tutor:"))
             speech.begin_turn(t_end)
             streamer = ReplyStreamer(speech)
             raw = tutor.reply(user_content, streamer)
@@ -1150,12 +1218,16 @@ def main():
             speech.wait()  # in VAD mode, do not listen while the tutor talks
             s = tutor.last_stats or {}
             first = f"{speech.first_audio_at:.2f}s" if speech.first_audio_at else "n/a"
-            print(f"⏱️  écoute {t_heard - t_end:.2f}s | TTFT {s.get('ttft', 0):.2f}s "
-                  f"({s.get('cached_tokens', 0)}/{s.get('prompt_tokens', 0)} en cache) | "
-                  f"{s.get('tg_tps', 0):.0f} tok/s | 1er son {first}\n")
+            cached = f"{s.get('cached_tokens', 0)}/{s.get('prompt_tokens', 0)}"
+            print(ui(f"écoute {t_heard - t_end:.2f}s | TTFT {s.get('ttft', 0):.2f}s ({cached} en cache) | "
+                     f"{s.get('tg_tps', 0):.0f} tok/s | 1er son {first}\n",
+                     f"hear {t_heard - t_end:.2f}s | TTFT {s.get('ttft', 0):.2f}s ({cached} cached) | "
+                     f"{s.get('tg_tps', 0):.0f} tok/s | first audio {first}\n"))
 
-        except KeyboardInterrupt:
-            print("\n\nAu revoir et à bientôt ! 👋")
+        except (QuitRequested, KeyboardInterrupt) as e:
+            # Ctrl+C leaves the cursor on the "^C" line; a typed "q" already ended its line.
+            print("\n" if isinstance(e, KeyboardInterrupt) else "", end="")
+            print(ui("\nAu revoir et à bientôt !", "\nGoodbye, see you soon!"))
             break
 
 
