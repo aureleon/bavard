@@ -26,11 +26,14 @@
           </button>
         </div>
       {:else if session.phase === "setup"}
-        <h2 class="mb-1 text-base font-semibold">{t.setup.title}</h2>
-        <p class="mb-3 text-sm text-white/60">{t.setup[session.setupStage ?? ""] ?? session.setupStage}</p>
-        <pre class="h-40 overflow-hidden rounded-lg bg-black/50 p-3 text-[10px] leading-snug text-white/50">{session.setupLines
-            .slice(-12)
-            .join("\n")}</pre>
+        <div class="flex items-center gap-3">
+          <span class="spinner"></span>
+          <div>
+            <p class="text-sm font-medium">{t.setup.title}</p>
+            <p class="text-[12px] text-white/55">{t.setup[session.setupStage ?? ""] ?? t.setup.pip}</p>
+          </div>
+        </div>
+        <p class="mt-3 text-[11px] text-white/40">{t.setup.once}</p>
       {:else}
         <div class="flex items-center gap-3">
           <span class="spinner"></span>

@@ -152,12 +152,10 @@ fn run_logged(app: &AppHandle, stage: &str, cmd: &mut Command) -> Result<(), Str
         .spawn()
         .map_err(|e| format!("{stage}: {e}"))?;
     let stderr = child.stderr.take().unwrap();
-    let app2 = app.clone();
-    let stage2 = stage.to_string();
+    // The UI only shows the stage; the output is kept for the error report.
     let err_thread = std::thread::spawn(move || {
         let mut tail = Vec::new();
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            emit(&app2, &stage2, Some(line.clone()));
             tail.push(line);
             if tail.len() > 20 {
                 tail.remove(0);
@@ -165,15 +163,20 @@ fn run_logged(app: &AppHandle, stage: &str, cmd: &mut Command) -> Result<(), Str
         }
         tail
     });
+    emit(app, stage, None);
+    let mut out_tail: Vec<String> = Vec::new();
     for line in BufReader::new(child.stdout.take().unwrap()).lines().map_while(Result::ok) {
-        emit(app, stage, Some(line));
+        out_tail.push(line);
+        if out_tail.len() > 20 {
+            out_tail.remove(0);
+        }
     }
     let status = child.wait().map_err(|e| e.to_string())?;
     let tail = err_thread.join().unwrap_or_default();
     if status.success() {
         Ok(())
     } else {
-        Err(format!("{stage} failed ({status}):\n{}", tail.join("\n")))
+        Err(format!("{stage} failed ({status}):\n{}\n{}", out_tail.join("\n"), tail.join("\n")))
     }
 }
 
@@ -209,7 +212,6 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
         let base = find_base_python().ok_or(
             "Python 3.12 or newer was not found. Install it (for example `brew install python@3.12`) and restart Bavard.",
         )?;
-        emit(app, "venv", Some(base.display().to_string()));
         run_logged(
             app,
             "venv",
@@ -221,7 +223,6 @@ pub fn ensure_python(app: &AppHandle, paths: &Paths) -> Result<PathBuf, String> 
             Command::new(&python).args(["-m", "pip", "install", "--upgrade", "pip"]),
         )?;
     }
-    emit(app, "pip", Some("pip install -r requirements.txt".into()));
     run_logged(
         app,
         "pip",

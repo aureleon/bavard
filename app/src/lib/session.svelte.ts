@@ -56,7 +56,6 @@ export class Session {
   paused = $state(false);
   loadingStage = $state("imports");
   setupStage = $state<string | null>(null);
-  setupLines = $state<string[]>([]);
   downloads = $state<Record<string, { done: number; total: number | null; finished?: boolean }>>({});
   config = $state<EngineConfig | null>(null);
   settings = $state<Settings | null>(null);
@@ -108,7 +107,6 @@ export class Session {
     this.bridge.onSetup((e) => {
       if (this.phase === "boot" || this.phase === "crashed") this.phase = "setup";
       this.setupStage = e.stage;
-      if (e.line) this.setupLines = [...this.setupLines.slice(-200), e.line];
     });
     this.settings = await this.bridge.getSettings();
     this.speed = this.settings.speed;
@@ -122,7 +120,6 @@ export class Session {
     this.state = "loading";
     this.config = null;
     this.downloads = {};
-    this.setupLines = [];
     this.turns = [];
     this.#requested.clear();
     await this.bridge.restart();
