@@ -165,6 +165,131 @@ STOP_STRINGS = ["</s>", "<|im_end|>", "<|endoftext|>", "<turn|>", "<end_of_turn>
 # Audio capture
 # ---------------------------------------------------------------------------
 
+class EchoCanceller:
+    """Removes the tutor's own voice from the mic (acoustic echo cancellation),
+    so speakers work without headphones.
+
+    WebRTC AEC3, from the `livekit` package. The player passes every block it
+    sends to the speakers to far() (silence included, so the two streams stay
+    aligned). The recorders pass every mic block through near(), which returns
+    the cleaned audio. AEC3 works on 10 ms frames: near() keeps the remainder
+    for the next call, so it can return a few samples fewer or more than it got.
+    """
+
+    def __init__(self, out_latency_s=0.02):
+        from livekit import rtc
+
+        self.rtc = rtc
+        # Noise suppression stays off: it would change the pronunciation that
+        # Gemma listens to.
+        self.apm = rtc.AudioProcessingModule(echo_cancellation=True, high_pass_filter=True)
+        try:
+            in_latency = sd.query_devices(kind="input")["default_low_input_latency"]
+        except Exception:
+            in_latency = 0.02
+        # Starting hint only: AEC3 estimates the real delay itself.
+        self.delay_ms = int(1000 * (out_latency_s + in_latency)) + 10
+        self.lock = threading.Lock()
+        self.far_rest = {}
+        self.near_rest = {}
+        self.last_far = 0.0  # monotonic time of the last non-silent far block
+        import atexit
+        atexit.register(self.close)  # before livekit's own exit handler
+
+    @staticmethod
+    def _frames(rest, rate, pcm):
+        n = rate // 100
+        buf = np.concatenate([rest.get(rate, np.zeros(0, np.float32)), pcm])
+        cut = len(buf) // n * n
+        rest[rate] = buf[cut:]
+        return buf[:cut], n
+
+    def _frame(self, pcm, rate):
+        data = (np.clip(pcm, -1, 1) * 32767).astype(np.int16).tobytes()
+        return self.rtc.AudioFrame(data, rate, 1, len(pcm))
+
+    def far(self, pcm, rate):
+        """Audio just sent to the speakers (audio thread)."""
+        if self.apm is None:
+            return
+        if np.abs(pcm).max(initial=0) > 1e-4:
+            self.last_far = time.monotonic()
+        buf, n = self._frames(self.far_rest, rate, np.asarray(pcm, np.float32))
+        with self.lock:
+            for i in range(0, len(buf), n):
+                self.apm.process_reverse_stream(self._frame(buf[i:i + n], rate))
+
+    def near(self, pcm, rate):
+        """Mic audio -> the same audio without the tutor's voice (audio thread)."""
+        pcm = np.asarray(pcm, np.float32).reshape(-1)
+        if self.apm is None:
+            return pcm.copy()
+        buf, n = self._frames(self.near_rest, rate, pcm)
+        out = np.empty(len(buf), np.float32)
+        with self.lock:
+            for i in range(0, len(buf), n):
+                frame = self._frame(buf[i:i + n], rate)
+                self.apm.set_stream_delay_ms(self.delay_ms)
+                self.apm.process_stream(frame)
+                out[i:i + n] = np.frombuffer(frame.data, dtype=np.int16) / 32768.0
+        return out
+
+    def far_recent(self, within_s=0.4):
+        """True while the tutor is talking (or just stopped)."""
+        return time.monotonic() - self.last_far < within_s
+
+    def close(self):
+        with self.lock:
+            apm, self.apm = self.apm, None
+        if apm is not None:
+            try:
+                apm._ffi_handle.dispose()
+            except Exception:
+                pass
+
+
+ECHO = None  # the active EchoCanceller, or None (set by the CLI and serve.py)
+
+SPEAKER_NAMES = re.compile(r"speaker|macbook|imac|display|studio|built-in|haut-parleur", re.I)
+
+
+def output_device_name():
+    try:
+        return sd.query_devices(kind="output")["name"]
+    except Exception:
+        return ""
+
+
+def headphones_likely(name=None):
+    """Guess from the output device name (AirPods yes, MacBook Pro Speakers no)."""
+    name = output_device_name() if name is None else name
+    return bool(name) and not SPEAKER_NAMES.search(name)
+
+
+def start_echo_canceller(mode, player):
+    """mode: auto (on unless headphones are likely) | on | off.
+    Sets ECHO and returns it, or None."""
+    global ECHO
+    if mode == "off" or (mode == "auto" and headphones_likely()):
+        ECHO = None
+        return None
+    try:
+        ECHO = EchoCanceller(player.stream.latency or 0.02)
+    except ImportError:
+        log(ui("Annulation d'écho indisponible : pip install livekit",
+               "Echo cancellation unavailable: pip install livekit"))
+        ECHO = None
+    return ECHO
+
+
+def mic_clean(pcm, rate):
+    """A mic block, with the tutor's voice removed when echo cancellation is on."""
+    ec = ECHO
+    if ec is None:
+        return np.asarray(pcm, np.float32).reshape(-1).copy()
+    return ec.near(pcm, rate)
+
+
 def to_16k(audio, rate):
     """Resample a full recording to 16 kHz for Gemma, Whisper and Silero."""
     if rate == SAMPLE_RATE or not len(audio):
@@ -342,9 +467,10 @@ class PushToTalkRecorder:
 
     def _callback(self, indata, frames, time_info, status):
         if self.is_recording:
-            self.q.put(indata.copy())
+            pcm = mic_clean(indata[:, 0], self.rate)
+            self.q.put(pcm)
             if self.listener:
-                self.listener.feed(indata[:, 0])
+                self.listener.feed(pcm)
 
     def record(self):
         """Return the recording at 16 kHz."""
@@ -370,7 +496,7 @@ class PushToTalkRecorder:
             chunks.append(self.q.get_nowait())
         if not chunks:
             return np.array([], dtype=np.float32)
-        return to_16k(np.concatenate(chunks, axis=0).flatten(), self.rate)
+        return to_16k(np.concatenate(chunks), self.rate)
 
 
 class VadRecorder:
@@ -415,23 +541,34 @@ class VadRecorder:
             frame = resample_poly(frame, SAMPLE_RATE, self.rate).astype(np.float32)[: self.FRAME]
         return self.model(self.torch.from_numpy(np.ascontiguousarray(frame)), SAMPLE_RATE).item()
 
-    def record(self, cancel=None, on_level=None, on_speech=None, quiet=False):
+    # Speech start while the tutor is audible (strict()): 7 of 10 frames
+    # (~0.3 s) above this probability. Echo leftovers are short and faint.
+    STRICT_THRESHOLD = 0.8
+    STRICT_WINDOW, STRICT_HITS = 10, 7
+
+    def record(self, cancel=None, on_level=None, on_speech=None, quiet=False,
+               strict=None, on_abort=None):
         """Return the utterance at 16 kHz.
 
         Embedding hooks (all optional): `cancel` is a threading.Event; when it
         is set, record() returns None. `on_level(pcm)` gets every mic block (on
-        the audio thread). `on_speech()` is called when speech starts.
+        the audio thread). `on_speech()` is called when speech starts, and
+        `on_abort()` when that speech turns out too short (a cough, a click).
+        `strict()` -> True makes the start of speech harder to trigger.
         """
         frames_q = queue.Queue()
 
         def callback(indata, frames, time_info, status):
-            frames_q.put(indata[:, 0].copy())
+            pcm = mic_clean(indata[:, 0], self.rate)
+            frames_q.put(pcm)
             if on_level is not None:
-                on_level(indata[:, 0])
+                on_level(pcm)
 
         self.model.reset_states()
         preroll, speech = [], []
         speaking, silent_run, voiced = False, 0, 0
+        hits = []
+        keep_pre = max(self.preroll_frames, self.STRICT_WINDOW)
         buf = np.zeros(0, dtype=np.float32)
         done = lambda frames: to_16k(np.concatenate(frames), self.rate)
 
@@ -453,14 +590,24 @@ class VadRecorder:
                 buf = np.concatenate([buf, block])
                 while len(buf) >= self.frame:
                     frame, buf = buf[: self.frame], buf[self.frame:]
-                    is_speech = self._prob(frame) >= self.threshold
+                    prob = self._prob(frame)
+                    is_speech = prob >= self.threshold
 
                     if not speaking:
                         preroll.append(frame)
-                        preroll = preroll[-self.preroll_frames:] if self.preroll_frames else []
-                        if is_speech:
+                        preroll = preroll[-keep_pre:]
+                        if strict is not None and strict():
+                            hits = (hits + [prob >= self.STRICT_THRESHOLD])[-self.STRICT_WINDOW:]
+                            start = sum(hits) >= self.STRICT_HITS
+                            pre = keep_pre  # the frames that confirmed the start, too
+                        else:
+                            hits = []
+                            start = is_speech
+                            pre = self.preroll_frames
+                        if start:
+                            hits = []
                             speaking = True
-                            speech = list(preroll)
+                            speech = list(preroll[-pre:]) if pre else [frame]
                             voiced, silent_run = 1, 0
                             if self.listener:
                                 self.listener.begin()
@@ -494,6 +641,8 @@ class VadRecorder:
                         # Too short (cough, click): go back to waiting
                         speaking, preroll, speech = False, [], []
                         self.model.reset_states()
+                        if on_abort is not None:
+                            on_abort()
 
 
 # ---------------------------------------------------------------------------
@@ -661,14 +810,21 @@ class PcmPlayer:
     def _callback(self, outdata, frames, time_info, status):
         out = outdata[:, 0]
         out[:] = 0
-        if self.paused:
-            if self.on_level is not None:
-                self.on_level(out)
-            return
+        filled = 0 if self.paused else self._fill(out, frames)
+        if ECHO is not None:
+            ECHO.far(out, self.sample_rate)  # silence too, to keep both streams aligned
+        if self.on_level is not None and (filled or self.paused):
+            self.on_level(out)
+        if filled and self.on_first_sound is not None:
+            cb, self.on_first_sound = self.on_first_sound, None
+            cb()
+
+    def _fill(self, out, frames):
+        """Copy queued audio into `out`; return how many samples were filled."""
         with self.lock:
             if not self.playing:
                 if self.buffered == 0 or (self.buffered < self.prebuffer and not self.flushed):
-                    return
+                    return 0
                 self.playing = True
             filled = 0
             while filled < frames and self.pieces:
@@ -683,11 +839,7 @@ class PcmPlayer:
             self.buffered -= filled
             if self.buffered == 0:
                 self.playing = False  # underrun or end: re-arm the jitter buffer
-        if self.on_level is not None:
-            self.on_level(out)
-        if filled and self.on_first_sound is not None:
-            cb, self.on_first_sound = self.on_first_sound, None
-            cb()
+            return filled
 
 
 class SpeechQueue:
@@ -1112,6 +1264,8 @@ def main():
                         help="Mode audio : fichier du prompt de transcription (défaut: prompts/hear.txt)")
     parser.add_argument("--whisper-model", default="mlx-community/whisper-base-mlx",
                         help="--stt whisper : modèle MLX Whisper (défaut: whisper-base-mlx)")
+    parser.add_argument("--aec", choices=["auto", "on", "off"], default="auto",
+                        help="Annulation d'écho (auto : active sauf avec un casque)")
     parser.add_argument("--en", action="store_true",
                         help="Program text in English (the tutor still speaks French)")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -1176,6 +1330,7 @@ def main():
         prebuffer = 0.0
     try:
         speech = SpeechQueue(make_speaker, prebuffer_s=prebuffer)
+        start_echo_canceller(args.aec, speech.player)
     except SystemExit:
         raise
     except Exception as e:
@@ -1194,7 +1349,10 @@ def main():
     if args.turn in ("vad", "semantic"):
         log(ui("Chargement de Silero VAD...", "Loading Silero VAD..."))
         recorder = VadRecorder(silence_s=args.silence, listener=listener, semantic=args.turn == "semantic")
-        log(ui("VAD prêt ! (utilise un casque pour éviter l'écho)\n", "VAD ready. (use headphones to avoid echo)\n"))
+        if ECHO is None and not headphones_likely():
+            log(ui("VAD prêt ! (utilise un casque pour éviter l'écho)\n", "VAD ready. (use headphones to avoid echo)\n"))
+        else:
+            log(ui("VAD prêt !\n", "VAD ready.\n"))
     else:
         recorder = PushToTalkRecorder(listener=listener)
 

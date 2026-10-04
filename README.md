@@ -77,8 +77,8 @@ The startup warm-up also fills the prefix cache, so the first turn is as fast as
 
 - Apple Silicon Mac (M1/M2/M3/M4)
 - macOS 14+
-- Python 3.12+
-- Headphones for `--turn vad` and `--turn semantic` (there is no echo cancellation; the mic is closed while the tutor speaks)
+- Python 3.10–3.12 (Kokoro does not support 3.13+)
+- Headphones are optional: echo cancellation removes the tutor's voice from the mic (see "Echo cancellation")
 
 ## Usage
 
@@ -150,9 +150,30 @@ Hands-free modes (`--turn vad`, `--turn semantic`): just talk. Press **Ctrl+C** 
 # Custom system prompts (see "Editing the prompts")
 ./run.sh --tutor-prompt prompts/tutor-b2.txt
 
+# Echo cancellation: auto (default: on unless the output looks like headphones), on, off
+./run.sh --turn vad --aec on
+
 # Initial playback speed (default 0.92); tutor temperature (default 1.0 for Gemma)
 ./run.sh --speed 0.85 --temperature 0.7
 ```
+
+### Echo cancellation
+
+Without headphones, the mic hears the tutor. `--aec` (default `auto`) runs WebRTC's echo canceller (AEC3, from the `livekit` package) on every mic block. The player passes each block it sends to the speakers to the canceller, so it knows exactly what to remove. `auto` turns it on unless the output device name looks like headphones (AirPods yes, "MacBook Pro Speakers" no).
+
+With echo cancellation or headphones, the hands-free modes (`--turn vad`, `--turn semantic`) keep the mic open while the tutor thinks and speaks. Talking over the tutor stops it and starts your turn (barge-in). While the tutor is audible, speech must be clearer and last about 0.3 s before it counts, so leftover echo does not start a turn. Turn barge-in off with `--no-barge-in` (the mic then closes while the tutor speaks, as before).
+
+Noise suppression stays off: it would change the pronunciation that Gemma listens to, and in the tests it also weakened the learner's voice when both talk.
+
+Measured on a simulated room (45 ms delay, reverb, speaker distortion, the tutor louder than the learner at the mic):
+
+| | Mic, no AEC | After AEC |
+|---|---|---|
+| Echo level | — | −34 dB |
+| Silero VAD "speech" while only the tutor talks | 93 % of frames | 0 % |
+| Learner talking over the tutor: VAD | 100 % | 100 % |
+| Learner talking over the tutor: Whisper | the tutor's words | the learner's words, correct |
+| Barge-in detected after the learner starts | (echo triggers at once) | ~0.3 s |
 
 ### Editing the prompts
 
@@ -244,6 +265,8 @@ Turn mode and speed change at once. A new hearing method or voice restarts the s
 
 **Memory.** The app does not use a fixed limit. The sidecar reads the GPU memory that macOS recommends for this Mac (Metal's `recommendedMaxWorkingSetSize`, from `mx.device_info()`). Settings shows the estimated peak of the chosen setup (the table in [Memory and speed](#memory-and-speed)) against that budget, and disables options that would go past it. The sidecar also warns at startup if the setup does not fit.
 
+**Echo cancellation.** Settings has Auto / On / Off (`--aec`) and, in hands-free modes, "Interrupt the tutor by speaking" (`--no-barge-in` when off). Both restart the engine.
+
 **Developer options.** At the bottom of Settings: the model (any alias from `--model`, or another MLX repo; text-only models switch hearing to Whisper), the context window, temperature / top-p / top-k, the reply length cap, the semantic end-of-turn threshold, the Whisper model, Kyutai quantization, and a verbose log. Sampling, reply length, context and the threshold apply from the next turn without a restart (`set_tuning`); the others restart the engine. A green or amber dot shows which is which.
 
 **Prompts.** The **Prompts** view edits `tutor.txt` and `hear.txt` in the app. It checks the required markers as you type. **Save and apply** writes the file and reloads it in the running engine: the conversation is kept, and the prefix cache is rebuilt in about 1 s. **Default** restores the prompt shipped with the app. To write a prompt in English, switch the editor to **English** and press **Translate to French**: Gemma translates it (about 15 s, streamed into the editor) and keeps the markers and the French example sentences. Review the French text, then save. Your English text is kept for the next edit.
@@ -264,6 +287,7 @@ echo '{"cmd":"text_turn","text":"Je suis allé à le marché."}' | ./.venv/bin/p
 - **Kyutai STT cannot be prompted.** It has no instructions input, so it cannot be told to keep your mistakes. Use `--stt audio` (alone or with `--turn semantic`) for error detection.
 - **Audio turns are limited to 30 s** (the Gemma 4 audio encoder limit). Longer recordings are cut.
 - `gemma-12b` audio input has not been tested.
+- **Echo cancellation was tested on simulated echo**, not yet in a real room. If the tutor's voice still starts turns on your speakers, use headphones or `--no-barge-in`.
 
 ## License
 

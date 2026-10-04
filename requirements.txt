@@ -7,6 +7,8 @@ soundfile
 kokoro
 silero-vad
 scipy
+# WebRTC echo cancellation (AEC3), so speakers work without headphones
+livekit>=1.0
 # Runtime dependencies of moshi_mlx (Kyutai), which is installed with --no-deps
 # from requirements-kyutai.txt
 aiohttp

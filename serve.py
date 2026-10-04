@@ -32,7 +32,7 @@ Events
   partial {text}, notice {key}, user_turn {id, transcript, pronunciation},
   reply_delta {id, correction, reponse}, reply_done {id, correction, reponse},
   turn_stats {id, ...}, translation {id, ...}, vocab {id, items}, stats {...},
-  speed {speed}, mode {mode}, voice {paused}, listening {enabled, window_hidden}, prompts_reloaded {seconds},
+  speed {speed}, mode {mode}, voice {paused}, mic {on}, listening {enabled, window_hidden}, prompts_reloaded {seconds},
   prompt_translation {name, req, text, done, missing?}, tuning {...},
   error {message}, fatal {message}, bye
 
@@ -109,7 +109,6 @@ import tutor as T  # noqa: E402
 
 LEVEL_HZ = 30
 BANDS = 8
-SPEAKER_NAMES = re.compile(r"speaker|macbook|imac|display|studio|built-in|haut-parleur", re.I)
 
 
 class LevelMeter:
@@ -289,11 +288,12 @@ class PttRecorder:
         with self.lock:
             if self.stream is None:
                 return
-            self.chunks.append(indata[:, 0].copy())
-            self.samples += frames
+            pcm = T.mic_clean(indata[:, 0], self.rate)
+            self.chunks.append(pcm)
+            self.samples += len(pcm)
         if self.listener:
-            self.listener.feed(indata[:, 0])
-        self.on_level(indata[:, 0])
+            self.listener.feed(pcm)
+        self.on_level(pcm)
         if not self.limit_hit and self.samples >= T.MAX_AUDIO_SECONDS * self.rate:
             self.limit_hit = True
             self.on_limit()
@@ -373,6 +373,9 @@ class Engine:
         # "window" (window hidden). The mic listens only when none is set.
         self.pause_reasons = set()
         self.idle = threading.Event()
+        self.mic_ok = threading.Event()     # the hands-free loop may record now
+        self.mic_flag = None
+        self.barge_in = False               # hands-free: speaking over the tutor stops it
         self.hf_cancel = threading.Event()  # stops the current hands-free recording
         self.hf_wake = threading.Event()    # mode / pause changed
         self.interrupted = False            # the current reply was stopped by the learner
@@ -393,8 +396,27 @@ class Engine:
             self.idle.set()
         else:
             self.idle.clear()
-        mic = state == "listening" or (state == "idle" and self.mode != "ptt" and not self.pause_reasons)
-        emit("state", state=state, mic=mic, **extra)
+        emit("state", state=state, mic=self._update_mic(), **extra)
+
+    def _update_mic(self):
+        """Work out whether the hands-free mic is open; return the flag.
+
+        It is open when idle and, with barge-in, while the tutor thinks or
+        speaks (so the learner can talk over it)."""
+        hands_free = self.mode != "ptt" and not self.pause_reasons and self.vad is not None
+        ok = hands_free and (self.state == "idle" or
+                             (self.barge_in and self.state in ("thinking", "speaking")))
+        if ok:
+            self.mic_ok.set()
+        else:
+            self.mic_ok.clear()
+        self.mic_flag = self.state == "listening" or ok
+        return self.mic_flag
+
+    def refresh_mic(self):
+        before = self.mic_flag
+        if self._update_mic() != before:
+            emit("mic", on=self.mic_flag)
 
     def settle(self):
         """Back to idle after a turn or a replay, unless the learner already
@@ -455,6 +477,10 @@ class Engine:
         self.speech = T.SpeechQueue(make, prebuffer_s=prebuffer)
         self.speech.speaker.set_speed(a.speed)
         self.speech.player.on_level = self.out_meter
+        self.echo = T.start_echo_canceller(a.aec, self.speech.player)
+        self.headphones = T.headphones_likely()
+        # Talking over the tutor needs its voice kept out of the mic.
+        self.barge_in = a.barge_in and (self.echo is not None or self.headphones)
 
         if a.stt == "kyutai" or a.turn == "semantic":
             self._load_listener()
@@ -485,10 +511,7 @@ class Engine:
     def config(self):
         import sounddevice as sd
 
-        try:
-            out_name = sd.query_devices(kind="output")["name"]
-        except Exception:
-            out_name = ""
+        out_name = T.output_device_name()
         a = self.args
         budget = memory_budget()
         return {
@@ -499,7 +522,9 @@ class Engine:
             "tuning": self.tuning(),
             "supports_audio": self.tutor.supports_audio,
             "output_device": out_name,
-            "headphones_likely": bool(out_name) and not SPEAKER_NAMES.search(out_name),
+            "headphones_likely": T.headphones_likely(out_name),
+            "echo_cancel": self.echo is not None,
+            "barge_in": self.barge_in,
             "prompts": {"tutor": a.tutor_prompt, "hear": a.hear_prompt},
         }
 
@@ -524,7 +549,7 @@ class Engine:
             self.speech.begin_turn(None)
             self.speech.say(T.GREETING)
             self.speech.wait()
-        self.set_state("idle")
+        self.settle()
         self._prefetch(0)
 
         while True:
@@ -578,8 +603,7 @@ class Engine:
                  window_hidden="window" in self.pause_reasons)
             self.hf_cancel.set()
             self.hf_wake.set()
-            if self.state == "idle":
-                self.set_state("idle")  # refresh the mic flag
+            self.refresh_mic()
         elif cmd == "replay":
             self.submit(PRIO_USER, self.replay, int(msg.get("id", 0)), msg.get("speed"))
         elif cmd == "translate":
@@ -649,14 +673,15 @@ class Engine:
                 self.hf_wake.wait()
                 self.hf_wake.clear()
                 continue
-            self.idle.wait()
+            self.mic_ok.wait()
             self.hf_cancel.clear()
             if self.mode == "ptt" or self.pause_reasons:
                 continue
             vad = self.vad
             try:
                 audio = vad.record(cancel=self.hf_cancel, on_level=self.mic_meter, quiet=True,
-                                   on_speech=lambda: self.set_state("listening"))
+                                   on_speech=self._speech_started, strict=self._tutor_audible,
+                                   on_abort=self._speech_aborted)
             except Exception as e:
                 traceback.print_exc()
                 emit("error", message=f"microphone: {e}")
@@ -671,6 +696,21 @@ class Engine:
             self.set_state("hearing")
             self.submit(PRIO_TURN, self.run_turn, audio, time.time())
             time.sleep(0.05)  # let the engine pick it up before waiting for idle
+
+    def _tutor_audible(self):
+        """While the tutor talks (or just stopped), speech must be clearer and
+        longer before it counts: leftover echo should not start a turn."""
+        return self.state in ("thinking", "speaking") or (
+            self.echo is not None and self.echo.far_recent())
+
+    def _speech_started(self):
+        if self.state in ("thinking", "speaking"):
+            self.stop_speaking()  # barge in
+        self.set_state("listening")
+
+    def _speech_aborted(self):
+        if self.state == "listening":
+            self.set_state("idle")
 
     def set_turn_mode(self, mode):
         if mode not in ("ptt", "vad", "semantic"):
@@ -751,7 +791,8 @@ class Engine:
 
         def first_sound():
             mark()
-            self.set_state("speaking", id=tid)
+            if self.state == "thinking" and not self.interrupted:
+                self.set_state("speaking", id=tid)
 
         speech.player.on_first_sound = first_sound
 
@@ -971,6 +1012,10 @@ def main():
     p.add_argument("--no-prefetch", dest="prefetch", action="store_false",
                    help="do not translate / extract vocabulary after each turn")
     p.add_argument("--no-greet", dest="greet", action="store_false", help="do not speak the greeting")
+    p.add_argument("--aec", choices=["auto", "on", "off"], default="auto",
+                   help="echo cancellation (auto: on unless headphones are likely)")
+    p.add_argument("--no-barge-in", dest="barge_in", action="store_false",
+                   help="hands-free: do not stop the tutor when the learner talks over it")
     p.add_argument("--mute", action="store_true", help="tests: play silence instead of the voice")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
