@@ -18,6 +18,7 @@ Commands
   vocab {id}                     A2/B1 expressions in a tutor reply (cache-less)
   stats                          context, cache and memory
   reload_prompts                 re-read the prompt files (keeps the conversation)
+  translate_prompt {name, text, req?}   English prompt -> French (streamed)
   shutdown                       exit now
   Debug: text_turn {text}, file_turn {path}
 
@@ -28,6 +29,7 @@ Events
   reply_delta {id, correction, reponse}, reply_done {id, correction, reponse},
   turn_stats {id, ...}, translation {id, ...}, vocab {id, items}, stats {...},
   speed {speed}, mode {mode}, prompts_reloaded {seconds},
+  prompt_translation {name, req, text, done, missing?},
   error {message}, fatal {message}, bye
 
 All MLX work (Gemma, Whisper) runs on the main thread, because MLX binds
@@ -341,6 +343,19 @@ VOCAB_SYSTEM = (
 )
 
 
+PROMPT_TRANSLATE_SYSTEM = (
+    "You translate system prompts for a French tutoring app from English into French.\n"
+    "Rules:\n"
+    "- Translate everything into natural, clear French. Address the model with \"tu\".\n"
+    "- The French prompt must ask for the output format with these markers, written EXACTLY "
+    "like this (uppercase, accents, colon): {markers}. Never translate or change them.\n"
+    "- Keep the structure: line breaks, numbered rules, bullets, quotes and placeholders like <...>.\n"
+    "- Keep French example sentences exactly as they are, including their mistakes: they are "
+    "examples of learner errors.\n"
+    "- Output only the translated prompt. No introduction, no comment, no markdown fence."
+)
+
+
 class Engine:
     def __init__(self, args):
         self.args = args
@@ -555,6 +570,8 @@ class Engine:
             self.submit(PRIO_USER, self.vocab, int(msg["id"]))
         elif cmd == "stats":
             self.submit(PRIO_USER, self.stats)
+        elif cmd == "translate_prompt":
+            self.submit(PRIO_USER, self.translate_prompt, msg["name"], msg["text"], msg.get("req"))
         elif cmd == "reload_prompts":
             self.submit(PRIO_USER, self.reload_prompts)
         elif cmd == "text_turn":
@@ -812,6 +829,27 @@ class Engine:
         finally:
             speaker.set_speed(old)
             self.settle()
+
+    def translate_prompt(self, name, text, req=None):
+        """English prompt -> French prompt, streamed as prompt_translation
+        events. Cache-less, like translate / vocab."""
+        if name not in T.REQUIRED_MARKERS:
+            raise ValueError(f"unknown prompt {name}")
+        markers = T.REQUIRED_MARKERS[name]
+        system = PROMPT_TRANSLATE_SYSTEM.format(markers=", ".join(markers))
+        tokens = len(self.tutor.tokenizer.encode(text))
+        last = [0.0]
+
+        def on_text(out):
+            now = time.monotonic()
+            if now - last[0] > 0.15:
+                last[0] = now
+                emit("prompt_translation", name=name, req=req, text=out, done=False)
+
+        out = self.tutor.oneshot(system, text, max_tokens=max(400, int(tokens * 2.5)), on_text=on_text)
+        out = re.sub(r"^\s*```[a-z]*\s*\n|\n\s*```\s*$", "", out.strip()).strip()
+        missing = [m for m in markers if m.lower() not in out.lower()]
+        emit("prompt_translation", name=name, req=req, text=out, done=True, missing=missing)
 
     def reload_prompts(self):
         """Re-read the prompt files and re-warm the prefix cache. The chat

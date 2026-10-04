@@ -920,7 +920,7 @@ class Tutor:
             }
         return out
 
-    def oneshot(self, system, user, max_tokens=300):
+    def oneshot(self, system, user, max_tokens=300, on_text=None):
         """A side request that never touches the tutor history or its prefix
         cache (used for translations and vocabulary). Gemma's sliding-window
         cache cannot be rolled back, so these must not use self.cache."""
@@ -932,6 +932,8 @@ class Tutor:
             out += r.text
             if any(s in out for s in STOP_STRINGS):
                 break
+            if on_text is not None:
+                on_text(out)
         return strip_stops(out)
 
     def seed_greeting(self, greeting):
