@@ -7,7 +7,7 @@
   const downloads = $derived(Object.entries(session.downloads).filter(([, d]) => !d.finished));
 </script>
 
-{#if session.phase !== "ready"}
+{#if session.phase !== "ready" && !(session.phase === "crashed" && session.view !== "chat")}
   <div class="absolute inset-x-0 top-12 bottom-0 z-20 grid place-items-center bg-black/35 backdrop-blur-sm">
     <div class="w-[min(520px,85%)] rounded-2xl bg-neutral-900/80 p-6 text-white/85 shadow-2xl ring-1 ring-white/10">
       {#if session.phase === "crashed"}
@@ -23,6 +23,9 @@
           </button>
           <button class="rounded-lg bg-white/10 px-3 py-1.5 text-sm hover:bg-white/20" onclick={() => session.bridge.openLog()}>
             {t.openLog}
+          </button>
+          <button class="rounded-lg bg-white/10 px-3 py-1.5 text-sm hover:bg-white/20" onclick={() => (session.view = "settings")}>
+            {t.settings.title}
           </button>
         </div>
       {:else if session.phase === "setup"}

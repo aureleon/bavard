@@ -20,7 +20,12 @@
     return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   };
 
-  const go = (v: View) => (session.view = v);
+  // Navigation and settings wait until the engine is ready.
+  // A crashed engine keeps settings reachable, to switch away from a broken setup.
+  const locked = $derived(session.phase !== "ready" && session.phase !== "crashed");
+  const go = (v: View) => {
+    if (!locked) session.view = v;
+  };
 
   function keydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -108,7 +113,8 @@
     <nav class="flex rounded-full bg-black/25 p-[3px] ring-1 ring-white/[0.06]" aria-label="Navigation">
       {#each [["chat", t.nav.chat, "⌘1"], ["prompts", t.nav.prompts, "⌘2"]] as const as [v, label, key] (v)}
         <button
-          class="rounded-full px-3.5 py-[3px] text-[12px] font-medium transition {session.view === v
+          disabled={locked}
+          class="rounded-full px-3.5 py-[3px] text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-40 {session.view === v
             ? 'bg-white/[0.16] text-white shadow-sm'
             : 'text-white/55 hover:text-white/85'}"
           title={key}
@@ -120,7 +126,8 @@
 
     <div data-tauri-drag-region class="flex items-center justify-end gap-2">
       <button
-        class="rounded-md p-1.5 transition {session.view === 'settings'
+        disabled={locked}
+        class="rounded-md p-1.5 transition disabled:pointer-events-none disabled:opacity-40 {session.view === 'settings'
           ? 'bg-white/[0.16] text-white'
           : 'text-white/50 hover:bg-white/10 hover:text-white'}"
         title="{t.settings.title} (⌘,)"

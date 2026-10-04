@@ -117,6 +117,7 @@ export class Session {
   async restart() {
     this.crash = null;
     this.phase = "boot";
+    this.view = "chat";
     this.state = "loading";
     this.config = null;
     this.downloads = {};

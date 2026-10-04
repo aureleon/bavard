@@ -46,6 +46,7 @@ const fr = {
   setup: {
     title: "Première installation",
     find_python: "Recherche de Python 3.12…",
+    uv_python: "Téléchargement de Python 3.12…",
     venv: "Création de l'environnement Python…",
     pip: "Installation des dépendances (quelques minutes)…",
     done: "Installation terminée.",
@@ -172,6 +173,7 @@ const en: Strings = {
   setup: {
     title: "First-time setup",
     find_python: "Looking for Python 3.12…",
+    uv_python: "Downloading Python 3.12…",
     venv: "Creating the Python environment…",
     pip: "Installing dependencies (a few minutes)…",
     done: "Setup complete.",
