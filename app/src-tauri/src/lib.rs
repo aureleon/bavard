@@ -61,7 +61,7 @@ fn hide(app: &AppHandle) {
         let _ = w.hide();
     }
     // Hands-free modes: close the mic while the window is away.
-    let _ = app.state::<AppState>().engine.send(&json!({ "cmd": "pause" }));
+    let _ = app.state::<AppState>().engine.send(&json!({ "cmd": "pause", "reason": "window" }));
 }
 
 fn show(app: &AppHandle) {
@@ -70,7 +70,7 @@ fn show(app: &AppHandle) {
         let _ = w.show();
         let _ = w.set_focus();
     }
-    let _ = app.state::<AppState>().engine.send(&json!({ "cmd": "resume" }));
+    let _ = app.state::<AppState>().engine.send(&json!({ "cmd": "resume", "reason": "window" }));
 }
 
 fn toggle(app: &AppHandle) {

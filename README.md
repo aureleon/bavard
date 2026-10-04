@@ -228,18 +228,19 @@ In development, the app uses the repo `.venv` and `prompts/`. A release build bu
 |---|---|
 | `Cmd + Shift + Space` | Show or hide the window (from any app) |
 | Hold `Space` | Push-to-talk. Release to send. Pressing it while the tutor talks interrupts the tutor. |
+| `Space` (silence / semantic modes) | Switch the mic off or back on (also the round button) |
 | Hold `Shift` | Show the English translation |
 | `r` / `Alt + r` | Replay the last reply / replay it at 0.8x |
 | `+` / `-` | Speed ±0.05x (the slider goes from 0.75x to 1.25x) |
 | `Cmd + 1` / `Cmd + 2` | Conversation / Prompts |
 | `Cmd + ,` | Settings: turn mode, hearing, voice, interface language |
 | `Cmd + S` | In Prompts: save and apply |
-| `Esc` | Back to Conversation, or hide the window (hands-free modes also close the mic) |
+| `Esc` | Pause / resume the tutor's voice; otherwise back to Conversation |
 | `Cmd + Q` | Quit and free the memory |
 
 Click the speaker icon on a tutor line to replay it (`Alt`-click: 0.8x). Green underlines mark useful A2/B1 expressions; hover one to see its dictionary form and translation. Translations and vocabulary come from separate Gemma calls that do not use the tutor's prefix cache, so they never slow down the next turn. They run in the background after the tutor stops speaking.
 
-Turn mode and speed change at once. A new hearing method or voice restarts the sidecar (~10 s). The red traffic light hides the window; `Cmd + Q` quits.
+Turn mode and speed change at once. A new hearing method or voice restarts the sidecar (~10 s). The red traffic light hides the window (hands-free modes also close the mic); `Cmd + Q` quits.
 
 **Memory.** The app does not use a fixed limit. The sidecar reads the GPU memory that macOS recommends for this Mac (Metal's `recommendedMaxWorkingSetSize`, from `mx.device_info()`). Settings shows the estimated peak of the chosen setup (the table in [Memory and speed](#memory-and-speed)) against that budget, and disables options that would go past it. The sidecar also warns at startup if the setup does not fit.
 

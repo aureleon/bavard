@@ -49,6 +49,10 @@ export class Session {
   view = $state<View>("chat");
   promptsReloadedAt = $state(0);
   contextTokens = $state<number | null>(null);
+  /** The tutor's voice is on hold (Esc). */
+  voicePaused = $state(false);
+  /** Hands-free modes: the learner switched the mic off. */
+  listeningOff = $state(false);
   /** English prompt -> French translation in progress or just finished. */
   promptTranslation = $state<{ req: number; name: PromptName; text: string; done: boolean; missing?: string[] } | null>(null);
   #promptReq = 0;
@@ -119,6 +123,8 @@ export class Session {
     this.crash = null;
     this.phase = "boot";
     this.view = "chat";
+    this.voicePaused = false;
+    this.listeningOff = false;
     this.state = "loading";
     this.config = null;
     this.downloads = {};
@@ -238,6 +244,12 @@ export class Session {
       case "mode":
         this.mode = e.mode;
         break;
+      case "voice":
+        this.voicePaused = e.paused;
+        break;
+      case "listening":
+        this.listeningOff = !e.enabled;
+        break;
       case "tuning":
         if (this.config) {
           const { event: _, ...tuning } = e;
@@ -284,6 +296,19 @@ export class Session {
     const req = ++this.#promptReq;
     this.promptTranslation = { req, name, text: "", done: false };
     this.send({ cmd: "translate_prompt", name, text, req });
+  }
+
+  /** Esc: hold or resume the tutor's voice. Returns false if nothing is playing. */
+  toggleVoicePause(): boolean {
+    if (this.state !== "speaking" && this.state !== "thinking" && !this.voicePaused) return false;
+    this.send({ cmd: "voice_pause" });
+    return true;
+  }
+
+  /** Hands-free modes: switch the mic off or back on. */
+  toggleListening() {
+    if (this.phase !== "ready" || this.mode === "ptt") return;
+    this.send({ cmd: this.listeningOff ? "resume" : "pause", reason: "user" });
   }
 
   stopVoice() {

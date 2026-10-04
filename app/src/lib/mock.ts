@@ -65,6 +65,7 @@ export function mockBridge(): Bridge {
   let src: "mic" | "out" | null = null;
   let n = 0;
   let speed = 0.92;
+  let mockPaused = false;
   const turns: Record<number, (typeof REPLIES)[number]> = {};
   const prompts: Prompts = {
     tutor: { text: TUTOR, default: TUTOR, path: "prompts/tutor.txt" },
@@ -115,8 +116,8 @@ export function mockBridge(): Bridge {
         speed,
         max_context: 16384,
         max_audio_s: 30,
-        output_device: "AirPods",
-        headphones_likely: true,
+        output_device: "MacBook Pro Speakers",
+        headphones_likely: false,
         prompts: { tutor: "prompts/tutor.txt", hear: "prompts/hear.txt" },
         tuning: { temperature: 1, top_p: 0.95, top_k: 64, max_tokens: 220, max_context: 16384, eot_threshold: 0.5 },
         supports_audio: true,
@@ -224,6 +225,14 @@ export function mockBridge(): Bridge {
         }
         case "stats":
           emit({ event: "stats", context_tokens: 912 + n * 120, max_context: 16384, turns: n, speed, last: null });
+          break;
+        case "voice_pause":
+          mockPaused = msg.paused === undefined ? !mockPaused : Boolean(msg.paused);
+          emit({ event: "voice", paused: mockPaused });
+          break;
+        case "pause":
+        case "resume":
+          emit({ event: "listening", enabled: msg.cmd === "resume", window_hidden: false });
           break;
         case "stop":
           src = null;

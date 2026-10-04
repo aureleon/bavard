@@ -23,7 +23,8 @@
 
   const label = $derived.by(() => {
     if (session.phase !== "ready") return t.states.loading;
-    if (session.state === "idle" && handsFree) return session.mic ? t.waiting : t.paused;
+    if (session.voicePaused) return t.voicePaused;
+    if (session.state === "idle" && handsFree) return session.listeningOff ? t.micOff : t.waiting;
     return t.states[session.state];
   });
 
@@ -43,18 +44,45 @@
     <SphereWave state={session.phase === "ready" ? session.state : "loading"} mic={session.mic} />
   </div>
 
-  <p class="mb-4 text-[11px] font-semibold tracking-[0.25em] text-white/55">{label}</p>
+  <p class="mb-1 text-[11px] font-semibold tracking-[0.25em] text-white/55">{label}</p>
+  <p class="mb-3 h-3 text-[10px] text-white/35">
+    {#if session.voicePaused}{t.escResume}{:else if session.state === "speaking"}{t.escPause}{/if}
+  </p>
 
   {#if handsFree}
-    <div class="mb-5 flex h-[104px] flex-col items-center justify-center gap-1 text-center">
-      <p class="text-sm font-medium text-white/80">{t.handsFree}</p>
-      <p class="text-xs text-white/45">{t.handsFreeHint}</p>
+    <!-- Hands-free: the round button switches listening on and off -->
+    <button
+      class="relative mb-5 grid h-[104px] w-[104px] place-items-center rounded-full transition active:scale-95 disabled:opacity-40"
+      disabled={session.phase !== "ready"}
+      onclick={() => session.toggleListening()}
+      aria-pressed={!session.listeningOff}
+      aria-label={session.listeningOff ? t.micOn : t.micOffAction}
+    >
+      <svg viewBox="0 0 104 104" class="absolute inset-0">
+        <circle cx="52" cy="52" r={R} fill="none" stroke="rgb(255 255 255 / 0.12)" stroke-width="3" />
+        {#if !session.listeningOff}
+          <circle cx="52" cy="52" r={R} fill="none" stroke="rgb(110 231 183 / 0.6)" stroke-width="3" />
+        {/if}
+      </svg>
+      <span
+        class="grid h-[84px] w-[84px] place-items-center rounded-full text-center text-[10px] leading-tight font-semibold tracking-wider transition {session.listeningOff
+          ? 'bg-white/[0.12] text-white/70'
+          : 'bg-emerald-300/90 text-slate-900'}"
+      >
+        <svg viewBox="0 0 24 24" class="mb-0.5 h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" stroke-linecap="round" />
+          {#if session.listeningOff}<path d="M4 4l16 16" stroke-linecap="round" />{/if}
+        </svg>
+        {session.listeningOff ? t.micOffShort : t.micOnShort}
+      </span>
+    </button>
+    <p class="-mt-3 mb-4 text-[10px] text-white/35">
+      {session.listeningOff ? t.micHintOn : t.micHintOff}
       {#if session.state === "speaking"}
-        <button class="mt-2 rounded-full bg-white/10 px-4 py-1 text-xs text-white/80 hover:bg-white/20" onclick={() => session.stopVoice()}>
-          {t.stopVoice}
-        </button>
+        · <button class="underline decoration-white/30 hover:text-white/70" onclick={() => session.stopVoice()}>{t.stopVoice}</button>
       {/if}
-    </div>
+    </p>
   {:else}
     <button
       class="relative mb-5 grid h-[104px] w-[104px] place-items-center rounded-full transition active:scale-95 disabled:opacity-40"

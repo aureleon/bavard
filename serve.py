@@ -13,7 +13,8 @@ Commands
   voice_pause {paused?}          hold / resume the tutor's voice (toggles)
   set_speed {speed}              0.5 - 1.6 (UI uses 0.75 - 1.25)
   set_turn_mode {mode}           ptt | vad | semantic (semantic loads Kyutai STT)
-  pause / resume                 hands-free modes: close / reopen the mic
+  pause / resume {reason?}       hands-free modes: close / reopen the mic
+                                 (reason "user" by default, or "window")
   replay {id, speed?}            speak a tutor reply again (id 0 = greeting)
   translate {id}                 English for one turn (cache-less, cached per turn)
   vocab {id}                     A2/B1 expressions in a tutor reply (cache-less)
@@ -31,7 +32,7 @@ Events
   partial {text}, notice {key}, user_turn {id, transcript, pronunciation},
   reply_delta {id, correction, reponse}, reply_done {id, correction, reponse},
   turn_stats {id, ...}, translation {id, ...}, vocab {id, items}, stats {...},
-  speed {speed}, mode {mode}, voice {paused}, prompts_reloaded {seconds},
+  speed {speed}, mode {mode}, voice {paused}, listening {enabled, window_hidden}, prompts_reloaded {seconds},
   prompt_translation {name, req, text, done, missing?}, tuning {...},
   error {message}, fatal {message}, bye
 
@@ -368,7 +369,9 @@ class Engine:
         self.next_id = 1
         self.state = None
         self.mode = args.turn
-        self.paused = False
+        # Hands-free mic holds: "user" (mic switched off in the app) and
+        # "window" (window hidden). The mic listens only when none is set.
+        self.pause_reasons = set()
         self.idle = threading.Event()
         self.hf_cancel = threading.Event()  # stops the current hands-free recording
         self.hf_wake = threading.Event()    # mode / pause changed
@@ -390,7 +393,7 @@ class Engine:
             self.idle.set()
         else:
             self.idle.clear()
-        mic = state == "listening" or (state == "idle" and self.mode != "ptt" and not self.paused)
+        mic = state == "listening" or (state == "idle" and self.mode != "ptt" and not self.pause_reasons)
         emit("state", state=state, mic=mic, **extra)
 
     def settle(self):
@@ -566,7 +569,13 @@ class Engine:
         elif cmd == "set_turn_mode":
             self.submit(PRIO_USER, self.set_turn_mode, msg["mode"])
         elif cmd in ("pause", "resume"):
-            self.paused = cmd == "pause"
+            reason = msg.get("reason", "user")
+            if cmd == "pause":
+                self.pause_reasons.add(reason)
+            else:
+                self.pause_reasons.discard(reason)
+            emit("listening", enabled="user" not in self.pause_reasons,
+                 window_hidden="window" in self.pause_reasons)
             self.hf_cancel.set()
             self.hf_wake.set()
             if self.state == "idle":
@@ -636,13 +645,13 @@ class Engine:
     # -- hands-free capture (own thread) ----------------------------------
     def _hands_free_loop(self):
         while True:
-            if self.mode == "ptt" or self.paused or self.vad is None:
+            if self.mode == "ptt" or self.pause_reasons or self.vad is None:
                 self.hf_wake.wait()
                 self.hf_wake.clear()
                 continue
             self.idle.wait()
             self.hf_cancel.clear()
-            if self.mode == "ptt" or self.paused:
+            if self.mode == "ptt" or self.pause_reasons:
                 continue
             vad = self.vad
             try:

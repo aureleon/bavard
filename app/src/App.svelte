@@ -29,8 +29,9 @@
 
   function keydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      if (session.view !== "chat") go("chat");
-      else void session.bridge?.hide();
+      // Hold / resume the tutor's voice; otherwise leave Prompts / Settings.
+      // (Hide the window with the red button or Cmd+Shift+Space.)
+      if (!session.toggleVoicePause() && session.view !== "chat") go("chat");
       return;
     }
     if (e.metaKey && e.key === ",") {
@@ -44,7 +45,10 @@
       return;
     }
     if (typing(e)) return;
-    if (e.code === "Space") {
+    if (e.code === "Space" && session.mode !== "ptt") {
+      e.preventDefault();
+      if (!e.repeat) session.toggleListening();
+    } else if (e.code === "Space") {
       e.preventDefault();
       if (!e.repeat && !spaceDown) {
         spaceDown = true;
@@ -155,17 +159,22 @@
     <!-- Right: the safety net, prompts or settings -->
     <div class="relative flex min-w-0 flex-1 flex-col">
       {#if session.view === "chat"}
-        {#if session.mode !== "ptt" && session.config && !session.config.headphones_likely}
-          <p class="mx-6 mt-3 rounded-md bg-amber-400/10 px-3 py-1.5 text-[11px] text-amber-200">{t.settings.headphones}</p>
-        {/if}
+        <!-- Top row of the transcript: optional headphone warning, then the Shift hint -->
+        <div class="flex shrink-0 items-start gap-3 px-4 pt-3 pl-6">
+          {#if session.mode !== "ptt" && session.config && !session.config.headphones_likely}
+            <p class="min-w-0 flex-1 rounded-md bg-amber-400/10 px-3 py-1.5 text-[11px] leading-snug text-amber-200">
+              {t.settings.headphones}
+            </p>
+          {/if}
+          <span
+            class="ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[11px] whitespace-nowrap transition {session.translating
+              ? 'bg-sky-300/15 text-sky-200'
+              : 'bg-white/[0.06] text-white/40'}"
+          >
+            {session.translating ? "EN" : t.shiftHint}
+          </span>
+        </div>
         <Transcript />
-        <span
-          class="pointer-events-none absolute top-3 right-4 rounded-full px-2.5 py-0.5 text-[11px] transition {session.translating
-            ? 'bg-sky-300/15 text-sky-200'
-            : 'bg-white/[0.06] text-white/40'}"
-        >
-          {session.translating ? "EN" : t.shiftHint}
-        </span>
       {:else if session.view === "prompts"}
         <PromptsView />
       {:else if session.settings}

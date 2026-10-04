@@ -122,6 +122,8 @@ export type EngineEvent =
   | { event: "mode"; mode: TurnMode }
   | { event: "prompts_reloaded"; seconds: number }
   | ({ event: "tuning" } & Tuning)
+  | { event: "voice"; paused: boolean }
+  | { event: "listening"; enabled: boolean; window_hidden: boolean }
   | { event: "prompt_translation"; name: PromptName; req: number | null; text: string; done: boolean; missing?: string[] }
   | { event: "error"; message: string }
   | { event: "fatal"; message: string }

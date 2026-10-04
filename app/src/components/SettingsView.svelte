@@ -158,13 +158,15 @@
       </section>
 
       <section>
-        <button class="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] hover:bg-white/20" onclick={() => (session.view = "prompts")}>
-          {s.prompts}
-        </button>
+        <div class="flex gap-2">
+          <button class="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] hover:bg-white/20" onclick={() => (session.view = "prompts")}>
+            {s.prompts}
+          </button>
+          <button class="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] hover:bg-white/20" onclick={() => session.restart()}>
+            {t.restart}
+          </button>
+        </div>
         <p class="mt-1.5 text-[11px] text-white/45">{s.promptsNote}</p>
-        <button class="mt-2 rounded-lg bg-white/10 px-3 py-1.5 text-[12px] hover:bg-white/20" onclick={() => session.restart()}>
-          {t.restart}
-        </button>
       </section>
 
       <DevOptions {draft} {change} />
