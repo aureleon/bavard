@@ -1,0 +1,9 @@
+mlx
+mlx-vlm>=0.7.4
+mlx-whisper
+sounddevice
+numpy
+soundfile
+kokoro
+silero-vad
+scipy
