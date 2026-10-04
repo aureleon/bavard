@@ -478,7 +478,9 @@ class Engine:
             except Exception as e:
                 traceback.print_exc()
                 emit("error", message=f"bad command {line!r}: {e}")
-        shutdown(0)  # stdin closed: the app is gone
+        # stdin closed: the app is gone. Finish queued work first (lets
+        # `echo '{...}' | serve.py` run one command), then exit.
+        self.submit(PRIO_BACKGROUND + 1, shutdown, 0)
 
     def command(self, msg):
         cmd = msg.get("cmd")

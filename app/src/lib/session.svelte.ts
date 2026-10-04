@@ -57,6 +57,7 @@ export class Session {
 
   bridge!: Bridge;
   #requested = new Set<string>();
+  #lastAutoRestart = 0;
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   get t() {
@@ -67,6 +68,21 @@ export class Session {
     this.bridge = await getBridge();
     this.bridge.onEngine((e) => this.#onEngine(e));
     this.bridge.onExit((e) => {
+      // One automatic restart per minute for a crash after a good start.
+      // Setup failures and fatal load errors (e.g. missing moshi_mlx) would
+      // only fail again, so they wait for the learner.
+      const now = Date.now();
+      if (this.phase === "ready" && !e.setup && now - this.#lastAutoRestart > 60_000) {
+        this.#lastAutoRestart = now;
+        this.showNotice(this.t.crashTitle);
+        void this.restart();
+        return;
+      }
+      if (this.phase === "crashed" && this.crash) {
+        // Keep the fatal message on top, add the log tail below it.
+        this.crash = { ...e, tail: `${this.crash.tail}\n\n${e.tail}` };
+        return;
+      }
       this.crash = e;
       this.phase = "crashed";
       this.state = "loading";
@@ -209,7 +225,7 @@ export class Session {
         this.showNotice(e.message);
         break;
       case "fatal":
-        this.crash = { code: 1, tail: e.message };
+        this.crash = { code: 1, tail: e.message, setup: false };
         this.phase = "crashed";
         break;
     }
