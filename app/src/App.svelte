@@ -87,7 +87,7 @@
   <header
     data-tauri-drag-region
     class="relative grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-white/[0.07] bg-white/[0.03] pr-3 {inTauri
-      ? 'pl-[80px]'
+      ? 'pl-[92px]'
       : 'pl-4'}"
   >
     {#if !inTauri}
